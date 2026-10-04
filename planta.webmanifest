@@ -2,7 +2,7 @@
   "name": "WEDM",
   "short_name": "WEDM",
   "description": "Registro de tiempos en planta · Grupo WEDM",
-  "start_url": "./PLANTA.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
