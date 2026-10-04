@@ -521,10 +521,9 @@ const PTIPOS=[
  ['Licencia de maternidad','🤱','ss','EPS',1,0,'','Ley 1822/2017 y Ley 2114/2021: 18 semanas. Se tramita con el certificado de la EPS.'],
  ['Licencia de paternidad','👶','ss','EPS',1,0,'','Ley 2114/2021: 2 semanas (también en adopción). Presenta el registro civil de nacimiento.'],
  ['Permiso personal','🙋','nr','C',0,2,'','Permiso a convenir con la empresa: el tiempo puede descontarse o compensarse con horas de trabajo efectivo en otro momento (art. 57-6 CST).'],
- ['Comisión sindical / entierro compañero','🤝','nr','C',0,2,'','Art. 57-6 CST: avisa con tiempo; el tiempo puede descontarse o compensarse, y no pueden ausentarse tantos que se afecte la operación.'],
  ['Licencia no remunerada','📄','nr','NR',1,0,'','Art. 51-4 CST: licencia concedida por la empresa de común acuerdo; durante ella no se paga salario.'],
  ['Llegada tarde / salida temprana','⏰','nr','C',0,2,'','Se descuenta o se compensa con horas en otro momento, según lo que acuerdes con Planeación.'],
- ['Cambio de turno','🔁','adm','',0,0,'','No afecta el pago: es un intercambio de turno con tu jefe o Planeación.'],
+ ['Cambio de turno','🔁','adm','',0,0,'','No afecta el pago. Elige el día y el turno al que pasarías (uno de los turnos de la empresa o uno personalizado); Planeación lo revisa y te responde.'],
  ['Olvidé marcar','📝','adm','',0,1,'Hora que olvidaste (opcional)','Corrección de una marcación de entrada, pausa o salida.'],
  ['Otro','✏️','adm','',1,2,'','Cuéntanos el motivo; Planeación define si es remunerado.']
 ];
@@ -548,8 +547,20 @@ function vistaPer(){
      ${p.estado==='pendiente'?`<button class="btn b-gh" style="margin-top:8px;min-height:38px" onclick="cancelarPer(${p.id})">Cancelar solicitud</button>`:''}</div>`; }).join('');
 }
 let PF={};
-function abrirPer(){ PF={tipo:'',desde:hoyISO(0),hasta:hoyISO(0),hi:'',hf:'',mot:''}; verPer(); }
+function abrirPer(){ PF={tipo:'',desde:hoyISO(0),hasta:hoyISO(0),hi:'',hf:'',mot:'',turno:''}; verPer(); }
 const TCFG={}; PTIPOS.forEach(t=>{ TCFG[t[0]]={multi:t[4],h:t[5],hl:t[6],g:t[2],pago:t[3],nota:t[7]}; });
+const TURNO_OPC=['C0','C1','C2','C3','C1*','C2*','C3*'];
+function turnoTxt(k,iso0){ const T=HZT[k]; if(!T) return ''; const dow=hzD(iso0).getDay(); const r=dow===0?null:dow===6?T.sab:T.lv; return r||'sin turno ese día'; }
+function turnoActual(iso0){ try{ if(!S.hor||S.hor.err) return null; const b=baseDia(hzD(iso0)); if(!b) return null; if(b.vac) return 'Vacaciones'; if(b.libre) return 'Libre'; return b.T.n+' ('+b.txt+')'; }catch(e){ return null; } }
+function bloqueTurno(){
+  const dow=hzD(PF.desde).getDay(); const act=turnoActual(PF.desde);
+  const op=TURNO_OPC.map(k=>{ const T=HZT[k], tx=turnoTxt(k,PF.desde), sel=PF.turno===k; return `<button class="btn ${sel?'b-pri':'b-gh'}" style="min-height:52px;font-size:12.5px;padding:6px;flex-direction:column;gap:2px;line-height:1.2" onclick="PF.turno='${k}';verPer()"><b>${esc(T.n)}</b><span style="font-weight:600;font-size:11.5px;opacity:.85">${esc(tx)}</span></button>`; }).join('');
+  return `${act?`<div style="background:#f1f5f9;border-radius:10px;padding:8px 10px;font-size:13px;margin:10px 0 0">📌 Tu turno ese día: <b>${esc(act)}</b></div>`:''}
+   <label class="l">¿A qué turno quieres pasar?</label>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${op}<button class="btn ${PF.turno==='X'?'b-pri':'b-gh'}" style="min-height:52px;font-size:13px;padding:6px;grid-column:1/-1" onclick="PF.turno='X';verPer()">✏️ Personalizado (elijo las horas)</button></div>
+   ${PF.turno==='X'?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label class="l">Hora de entrada</label><input type="time" value="${PF.hi}" onchange="PF.hi=this.value"></div><div><label class="l">Hora de salida</label><input type="time" value="${PF.hf}" onchange="PF.hf=this.value"></div></div>`:''}
+   ${dow===0&&PF.turno&&PF.turno!=='X'?'<div class="muted" style="font-size:12px;margin-top:6px">Los domingos los turnos estándar no aplican; si vas a trabajar elige «Personalizado».</div>':''}`;
+}
 function verPer(){
   const C=TCFG[PF.tipo]||{multi:0,h:0}; if(!C.multi) PF.hasta=PF.desde;
   const dias=Math.round((new Date(PF.hasta)-new Date(PF.desde))/864e5)+1;
@@ -560,13 +571,21 @@ function verPer(){
    ${PF.tipo?`<div style="display:grid;grid-template-columns:${C.multi?'1fr 1fr':'1fr'};gap:8px"><div><label class="l">${C.multi?'Desde':'Fecha'}</label><input type="date" value="${PF.desde}" onchange="PF.desde=this.value;if(PF.hasta<PF.desde)PF.hasta=PF.desde;verPer()"></div>${C.multi?`<div><label class="l">Hasta</label><input type="date" value="${PF.hasta}" min="${PF.desde}" onchange="PF.hasta=this.value;verPer()"></div>`:''}</div>
    ${C.h?`<div style="display:grid;grid-template-columns:${C.h===2?'1fr 1fr':'1fr'};gap:8px"><div><label class="l">${C.hl||'Hora inicio (opcional)'}</label><input type="time" value="${PF.hi}" onchange="PF.hi=this.value"></div>${C.h===2?`<div><label class="l">Hora fin (opcional)</label><input type="time" value="${PF.hf}" onchange="PF.hf=this.value"></div>`:''}</div>`:''}
    ${PF.tipo==='Vacaciones'?`<div style="background:#ecfeff;border-radius:10px;padding:8px 10px;font-size:13px;margin:8px 0">🏖️ Pides <b>${dias} día(s) calendario</b>. Planeación revisa el cruce con el horario y te responde aquí.</div>`:''}
+   ${PF.tipo==='Cambio de turno'?bloqueTurno():''}
    <label class="l">Motivo / detalle</label><textarea id="pf-mot" rows="3" style="width:100%;border:1.5px solid var(--border);border-radius:12px;padding:10px;font:inherit" placeholder="Cuéntale a Planeación el motivo…" oninput="PF.mot=this.value">${esc(PF.mot)}</textarea>
    <button class="btn b-ok big" id="pf-go" style="margin-top:12px" onclick="enviarPer()">Enviar solicitud</button>`:'<div class="muted" style="text-align:center;padding:12px">Elige una opción para continuar</div>'}`); }
 async function enviarPer(){
   if(!PF.tipo){ toast('Elige qué necesitas',true); return; } if(!PF.desde){ toast('Elige la fecha',true); return; }
   if(PF.tipo==='Otro'&&!limpio(PF.mot)){ toast('Cuéntanos el motivo',true); return; }
+  let _mot=limpio(PF.mot), _hi=PF.hi||null, _hf=((TCFG[PF.tipo]||{}).h===2?PF.hf:'')||null;
+  if(PF.tipo==='Cambio de turno'){
+    if(!PF.turno){ toast('Elige a qué turno quieres pasar',true); return; }
+    const act=turnoActual(PF.desde); let nuevo;
+    if(PF.turno==='X'){ if(!PF.hi||!PF.hf){ toast('Pon la hora de entrada y de salida',true); return; } nuevo='personalizado '+PF.hi+' – '+PF.hf; _hi=PF.hi; _hf=PF.hf; }
+    else{ { const tx=turnoTxt(PF.turno,PF.desde); nuevo='«'+HZT[PF.turno].n+'» ('+PF.turno+')'+(tx&&!/^sin /.test(tx)?' '+tx:''); } _hi=null; _hf=null; }
+    _mot=('Cambio de turno el '+dFmt(PF.desde)+(act?': de '+act:'')+' → '+nuevo+'.'+(_mot?' '+_mot:'')); }
   const b=$('pf-go'); if(b){ b.disabled=true; b.textContent='Enviando…'; }
-  try{ await sb.rpc('planta_permiso_crear',{p_token:S.ses.token,p_tipo:PF.tipo,p_desde:PF.desde,p_hasta:((TCFG[PF.tipo]||{}).multi?PF.hasta:PF.desde)||PF.desde,p_hora_ini:PF.hi||null,p_hora_fin:((TCFG[PF.tipo]||{}).h===2?PF.hf:'')||null,p_motivo:limpio(PF.mot)||null});
+  try{ await sb.rpc('planta_permiso_crear',{p_token:S.ses.token,p_tipo:PF.tipo,p_desde:PF.desde,p_hasta:((TCFG[PF.tipo]||{}).multi?PF.hasta:PF.desde)||PF.desde,p_hora_ini:_hi,p_hora_fin:_hf,p_motivo:_mot||null});
     cerrarSheet(); toast('✅ Solicitud enviada a Planeación'); await cargarPer(); }
   catch(e){ if(b){ b.disabled=false; b.textContent='Enviar solicitud'; } toast(e.message,true); } }
 async function cancelarPer(id){ if(!confirm('¿Cancelar esta solicitud?')) return; try{ await sb.rpc('planta_permiso_cancelar',{p_token:S.ses.token,p_id:id}); toast('Solicitud cancelada'); await cargarPer(); }catch(e){ toast(e.message,true); } }
