@@ -533,6 +533,22 @@ async function cargarPer(){
   catch(e){ S.perCarg=false; if(/venci|sesi/i.test(e.message)){ toast(e.message,true); salir(true); return; } S.per=[]; S.perErr=/planta_mis_permisos/i.test(e.message)?'Esta función todavía no está activada.':e.message; }
   S.perCarg=false; if(S.view==='per') pintar(); }
 const ESTP={pendiente:['⏳ Pendiente','#d97706','#fffbeb'],aprobado:['✅ Aprobado','#16a34a','#f0fdf4'],rechazado:['❌ Rechazado','#dc2626','#fef2f2'],cancelado:['Cancelado','#64748b','#f1f5f9']};
+function docsPerHtml(p){
+  if(p.estado==='cancelado'||p.estado==='rechazado') return '';
+  const sl=PDOCS[p.tipo]; if(!sl) return ''; const have=new Set((p.docs||[]).map(d=>d.slot)); const req=p.docs_req||[]; const falta=req.filter(r=>!have.has(r));
+  return `<div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
+   ${falta.length?`<div style="background:#fffbeb;border:1.5px solid #fde68a;color:#92400e;border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:6px">📎 <b>Falta adjuntar (obligatorio):</b> ${falta.map(esc).join(' · ')}</div>`:''}
+   ${sl.map(d=>`<div style="font-size:12.5px;margin:2px 0">${have.has(d[0])?'✅':(d[2]?'⚠️':'▫️')} ${esc(d[0])}${d[2]?'':' <span class="muted">(opcional)</span>'}</div>`).join('')}
+   <button class="btn ${falta.length?'b-pri':'b-gh'}" style="margin-top:8px;min-height:40px" onclick="abrirAdj(${p.id})">📎 ${falta.length?'Adjuntar documentos':'Ver / cambiar documentos'}</button></div>`; }
+function abrirAdj(id){ const p=(S.per||[]).find(x=>x.id===id); if(!p) return; const sl=PDOCS[p.tipo]||[]; const have=Object.fromEntries((p.docs||[]).map(d=>[d.slot,d]));
+  sheet(`<h2><span>📎 Documentos</span><button class="x" onclick="cerrarSheet()">✕</button></h2><div class="muted" style="font-size:13px;margin-bottom:8px">${esc(p.tipo)} · ${rngF(p)}</div>`+sl.map((d,i)=>{ const h=have[d[0]];
+   return `<div style="border:1.5px solid ${h?'#86efac':'var(--border)'};background:${h?'#f0fdf4':'#fff'};border-radius:12px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b style="font-size:14px">${esc(d[0])}</b><span style="background:${d[2]?'#fee2e2':'#e2e8f0'};color:${d[2]?'#b91c1c':'#475569'};border-radius:99px;padding:2px 9px;font-size:11px;font-weight:800;white-space:nowrap">${d[2]?'Obligatorio':'Opcional'}</span></div>
+    <div class="muted" style="font-size:12.5px;line-height:1.45;margin:4px 0 8px">${esc(d[1])}</div>
+    ${h?`<div style="font-size:13px;margin-bottom:6px">✅ ${esc(h.nombre||'Adjunto')}</div>`:''}
+    <label class="btn ${h?'b-gh':'b-pri'}" style="min-height:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">${h?'🔄 Cambiar archivo':'📷 Tomar foto o elegir archivo'}<input type="file" accept="image/*,application/pdf" style="display:none" onchange="adjSubir(${id},${i},this)"></label></div>`; }).join('')+`<button class="btn b-gh big" onclick="cerrarSheet()">Listo</button>`); }
+async function adjSubir(id,i,inp){ const f=inp.files&&inp.files[0]; if(!f) return; const p=(S.per||[]).find(x=>x.id===id); const d=(PDOCS[p.tipo]||[])[i];
+  try{ toast('Subiendo…'); const a=await pdComprimir(f); await sb.rpc('planta_permiso_doc_subir',{p_token:S.ses.token,p_id:id,p_slot:d[0],p_nombre:a.nombre,p_mime:a.mime,p_data:a.data}); toast('✅ Documento adjuntado'); await cargarPer(); abrirAdj(id); }catch(e){ toast(e.message,true); } }
 function rngF(p){ const a=String(p.desde).slice(0,10), b=String(p.hasta).slice(0,10); return a===b?dFmt(a):dFmt(a)+' → '+dFmt(b); }
 function vistaPer(){
   const tabs=segHtml('per'); const L=S.per;
@@ -543,12 +559,45 @@ function vistaPer(){
   return tabs+nuevo+L.map(p=>{ const e=ESTP[p.estado]||ESTP.pendiente, ic=(PTIPOS.find(x=>x[0]===p.tipo)||['','📄'])[1];
     return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><b>${ic} ${esc(p.tipo)}</b>${(TCFG[p.tipo]||{}).pago&&PAGO[TCFG[p.tipo].pago]?` <span style="background:${PAGO[TCFG[p.tipo].pago][2]};color:${PAGO[TCFG[p.tipo].pago][1]};border-radius:99px;padding:1px 8px;font-size:10.5px;font-weight:800;white-space:nowrap">${PAGO[TCFG[p.tipo].pago][0]}</span>`:''}<div class="muted" style="font-size:13px">${rngF(p)}${p.hora_ini?' · '+esc(p.hora_ini)+(p.hora_fin?' – '+esc(p.hora_fin):''):''}</div></div><span style="background:${e[2]};color:${e[1]};border-radius:99px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap">${e[0]}</span></div>
      ${p.motivo?`<div style="margin-top:6px;font-size:13.5px">${esc(p.motivo)}</div>`:''}
+     ${docsPerHtml(p)}
      ${p.respuesta?`<div style="margin-top:8px;background:#eff6ff;border-radius:10px;padding:8px 10px;font-size:13px">💬 ${esc(p.respuesta)}</div>`:''}
      ${p.estado==='pendiente'?`<button class="btn b-gh" style="margin-top:8px;min-height:38px" onclick="cancelarPer(${p.id})">Cancelar solicitud</button>`:''}</div>`; }).join('');
 }
 let PF={};
-function abrirPer(){ PF={tipo:'',desde:hoyISO(0),hasta:hoyISO(0),hi:'',hf:'',mot:'',turno:''}; verPer(); }
+function abrirPer(){ PF={tipo:'',desde:hoyISO(0),hasta:hoyISO(0),hi:'',hf:'',mot:'',turno:'',files:{},later:false}; verPer(); }
 const TCFG={}; PTIPOS.forEach(t=>{ TCFG[t[0]]={multi:t[4],h:t[5],hl:t[6],g:t[2],pago:t[3],nota:t[7]}; });
+// Documentos que se piden por tipo: [nombre, qué debe subir, obligatorio(1/0)]
+const PDOCS={
+ 'Calamidad doméstica':[['Soporte del hecho','Foto o PDF que compruebe lo ocurrido. Según el caso: constancia de la autoridad (bomberos, policía), informe médico, factura de la reparación o certificado de hospitalización de tu familiar.',1]],
+ 'Licencia de luto':[['Registro civil de defunción','Foto nítida (o PDF) del registro civil o certificado de defunción de tu familiar. Se debe presentar dentro de los 30 días siguientes al fallecimiento.',1],['Documento que demuestre el parentesco','Registro civil de nacimiento (padres, hijos, hermanos, abuelos), registro civil de matrimonio o declaración de unión marital de hecho (cónyuge o compañero/a). Foto o PDF.',1]],
+ 'Cita médica':[['Soporte de la cita o atención','Foto o PDF de la orden o cita con el especialista, o la constancia de atención de urgencias, donde se vea tu nombre, la fecha y la hora.',1]],
+ 'Citación judicial / legal':[['Citación o notificación','Foto o PDF de la citación o notificación (juzgado, fiscalía o entidad administrativa) donde se vea tu nombre, la fecha y la hora.',1],['Constancia de asistencia','Opcional: la constancia que te entregan al asistir. Puedes adjuntarla después.',0]],
+ 'Obligación escolar (acudiente)':[['Citación del colegio','Foto o PDF de la citación o circular del colegio donde se vea el nombre del estudiante, la fecha y que tu asistencia es obligatoria.',1],['Constancia de asistencia','Opcional: constancia del colegio con firma y sello. Puedes adjuntarla después.',0]],
+ 'Votación / jurado de votación':[['Certificado electoral o nombramiento de jurado','Si votaste: foto del certificado electoral que te dan al votar. Si fuiste jurado: foto del nombramiento o del certificado de jurado de votación.',1]],
+ 'Día de la bicicleta':[['Certificado de uso de la bicicleta','Constancia del parqueadero de bicicletas, de la app o del registro que acredite que te desplazas en bicicleta al trabajo.',1],['Foto de tu bicicleta','Opcional: foto de tu bicicleta, de preferencia en el parqueadero de la empresa.',0]],
+ 'Incapacidad médica':[['Incapacidad de la EPS/ARL','Foto de todas las páginas (legible) o PDF de la incapacidad. Deben verse tu nombre, los días y las fechas. El diagnóstico no es necesario.',1]],
+ 'Licencia de maternidad':[['Certificado médico de embarazo','Certificado del médico con la fecha probable del parto (foto o PDF).',1],['Licencia de maternidad de la EPS','Foto o PDF de la licencia o incapacidad de maternidad expedida por la EPS. Puedes adjuntarla después, cuando te la entreguen.',1]],
+ 'Licencia de paternidad':[['Registro civil de nacimiento','Foto o PDF del registro civil de nacimiento de tu hijo/a (o el documento de adopción).',1],['Licencia de paternidad de la EPS','Foto o PDF de la licencia expedida por la EPS. Puedes adjuntarla después.',1]],
+ 'Otro':[['Soporte (opcional)','Si tienes un documento o foto que respalde tu solicitud, adjúntalo aquí.',0]]
+};
+const pdReq=t=>(PDOCS[t]||[]).filter(d=>d[2]).map(d=>d[0]);
+function pdComprimir(f){ return new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onerror=()=>ko(new Error('No se pudo leer el archivo'));
+  fr.onload=()=>{ if(f.type==='application/pdf'){ if(f.size>3.6*1024*1024) return ko(new Error('El PDF pesa más de 3,5 MB')); return ok({nombre:f.name,mime:f.type,data:String(fr.result).split(',')[1]}); }
+    if(!/^image\//.test(f.type)) return ko(new Error('Solo se aceptan fotos o PDF'));
+    const im=new Image(); im.onerror=()=>ko(new Error('Imagen no válida')); im.onload=()=>{ const sc=Math.min(1,1600/Math.max(im.width,im.height)), c=document.createElement('canvas'); c.width=Math.max(1,Math.round(im.width*sc)); c.height=Math.max(1,Math.round(im.height*sc)); const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(im,0,0,c.width,c.height); ok({nombre:(f.name||'foto').replace(/\.[^.]+$/,'')+'.jpg',mime:'image/jpeg',data:c.toDataURL('image/jpeg',0.8).split(',')[1]}); }; im.src=fr.result; };
+  fr.readAsDataURL(f); }); }
+async function pfArchivo(i,inp){ const f=inp.files&&inp.files[0]; if(!f) return; const d=(PDOCS[PF.tipo]||[])[i]; try{ PF.files=PF.files||{}; PF.files[d[0]]=await pdComprimir(f); verPer(); }catch(e){ toast(e.message,true); } }
+function pfQuitar(i){ const d=(PDOCS[PF.tipo]||[])[i]; if(PF.files) delete PF.files[d[0]]; verPer(); }
+function bloqueDocs(){
+  const L=PDOCS[PF.tipo]; if(!L) return ''; PF.files=PF.files||{}; const falta=pdReq(PF.tipo).filter(n=>!PF.files[n]);
+  return `<label class="l">📎 Documentos que debes adjuntar</label>`+L.map((d,i)=>{ const f=PF.files[d[0]];
+   return `<div style="border:1.5px solid ${f?'#86efac':'var(--border)'};background:${f?'#f0fdf4':'#fff'};border-radius:12px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b style="font-size:14px">${esc(d[0])}</b><span style="background:${d[2]?'#fee2e2':'#e2e8f0'};color:${d[2]?'#b91c1c':'#475569'};border-radius:99px;padding:2px 9px;font-size:11px;font-weight:800;white-space:nowrap">${d[2]?'Obligatorio':'Opcional'}</span></div>
+    <div class="muted" style="font-size:12.5px;line-height:1.45;margin:4px 0 8px">${esc(d[1])}</div>
+    ${f?`<div style="display:flex;align-items:center;gap:8px;font-size:13px"><span>✅</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.nombre)}</span><button class="btn b-gh" style="min-height:34px;padding:0 12px" onclick="pfQuitar(${i})">Quitar</button></div>`
+      :`<label class="btn b-gh" style="min-height:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">📷 Tomar foto o elegir archivo<input type="file" accept="image/*,application/pdf" style="display:none" onchange="pfArchivo(${i},this)"></label>`}</div>`; }).join('')
+   +(falta.length?`<label style="display:flex;gap:10px;align-items:flex-start;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.4;margin-bottom:4px"><input type="checkbox" ${PF.later?'checked':''} onchange="PF.later=this.checked" style="width:20px;height:20px;margin-top:1px;flex-shrink:0"><span><b>Aún no lo tengo, lo adjunto después.</b><br>Tu solicitud queda registrada, pero <b>es obligatorio</b> que subas ${falta.length>1?'los documentos':'el documento'} luego desde «Permisos». Sin ${falta.length>1?'ellos':'él'} Planeación no podrá aprobarla.</span></label>`:'');
+}
 const TURNO_OPC=['C0','C1','C2','C3','C1*','C2*','C3*'];
 function turnoTxt(k,iso0){ const T=HZT[k]; if(!T) return ''; const dow=hzD(iso0).getDay(); const r=dow===0?null:dow===6?T.sab:T.lv; return r||'sin turno ese día'; }
 function turnoActual(iso0){ try{ if(!S.hor||S.hor.err) return null; const b=baseDia(hzD(iso0)); if(!b) return null; if(b.vac) return 'Vacaciones'; if(b.libre) return 'Libre'; return b.T.n+' ('+b.txt+')'; }catch(e){ return null; } }
@@ -572,6 +621,7 @@ function verPer(){
    ${C.h?`<div style="display:grid;grid-template-columns:${C.h===2?'1fr 1fr':'1fr'};gap:8px"><div><label class="l">${C.hl||'Hora inicio (opcional)'}</label><input type="time" value="${PF.hi}" onchange="PF.hi=this.value"></div>${C.h===2?`<div><label class="l">Hora fin (opcional)</label><input type="time" value="${PF.hf}" onchange="PF.hf=this.value"></div>`:''}</div>`:''}
    ${PF.tipo==='Vacaciones'?`<div style="background:#ecfeff;border-radius:10px;padding:8px 10px;font-size:13px;margin:8px 0">🏖️ Pides <b>${dias} día(s) calendario</b>. Planeación revisa el cruce con el horario y te responde aquí.</div>`:''}
    ${PF.tipo==='Cambio de turno'?bloqueTurno():''}
+   ${bloqueDocs()}
    <label class="l">Motivo / detalle</label><textarea id="pf-mot" rows="3" style="width:100%;border:1.5px solid var(--border);border-radius:12px;padding:10px;font:inherit" placeholder="Cuéntale a Planeación el motivo…" oninput="PF.mot=this.value">${esc(PF.mot)}</textarea>
    <button class="btn b-ok big" id="pf-go" style="margin-top:12px" onclick="enviarPer()">Enviar solicitud</button>`:'<div class="muted" style="text-align:center;padding:12px">Elige una opción para continuar</div>'}`); }
 async function enviarPer(){
@@ -584,9 +634,13 @@ async function enviarPer(){
     if(PF.turno==='X'){ if(!PF.hi||!PF.hf){ toast('Pon la hora de entrada y de salida',true); return; } nuevo='personalizado '+PF.hi+' – '+PF.hf; _hi=PF.hi; _hf=PF.hf; }
     else{ { const tx=turnoTxt(PF.turno,PF.desde); nuevo='«'+HZT[PF.turno].n+'» ('+PF.turno+')'+(tx&&!/^sin /.test(tx)?' '+tx:''); } _hi=null; _hf=null; }
     _mot=('Cambio de turno el '+dFmt(PF.desde)+(act?': de '+act:'')+' → '+nuevo+'.'+(_mot?' '+_mot:'')); }
+  const _req=pdReq(PF.tipo), _falta=_req.filter(n=>!(PF.files||{})[n]);
+  if(_falta.length&&!PF.later){ toast('Adjunta: '+_falta.join(' y ')+'. Si no lo tienes ahora, marca «Lo adjunto después».',true); return; }
   const b=$('pf-go'); if(b){ b.disabled=true; b.textContent='Enviando…'; }
-  try{ await sb.rpc('planta_permiso_crear',{p_token:S.ses.token,p_tipo:PF.tipo,p_desde:PF.desde,p_hasta:((TCFG[PF.tipo]||{}).multi?PF.hasta:PF.desde)||PF.desde,p_hora_ini:_hi,p_hora_fin:_hf,p_motivo:_mot||null});
-    cerrarSheet(); toast('✅ Solicitud enviada a Planeación'); await cargarPer(); }
+  try{ const _r=await sb.rpc('planta_permiso_crear2',{p_token:S.ses.token,p_tipo:PF.tipo,p_desde:PF.desde,p_hasta:((TCFG[PF.tipo]||{}).multi?PF.hasta:PF.desde)||PF.desde,p_hora_ini:_hi,p_hora_fin:_hf,p_motivo:_mot||null,p_docs_req:_req});
+    let _bad=[]; for(const k of Object.keys(PF.files||{})){ if(!(PDOCS[PF.tipo]||[]).some(d=>d[0]===k)) continue; try{ if(b) b.textContent='Subiendo '+k+'…'; await sb.rpc('planta_permiso_doc_subir',{p_token:S.ses.token,p_id:_r.id,p_slot:k,p_nombre:PF.files[k].nombre,p_mime:PF.files[k].mime,p_data:PF.files[k].data}); }catch(e2){ _bad.push(k); } }
+   
+    cerrarSheet(); toast(_bad.length?'⚠️ Solicitud enviada, pero no se pudo subir: '+_bad.join(', ')+'. Adjúntalo desde «Permisos».':(_falta.length?'✅ Solicitud enviada. Recuerda adjuntar los documentos pendientes.':'✅ Solicitud enviada a Planeación'),_bad.length>0); await cargarPer(); }
   catch(e){ if(b){ b.disabled=false; b.textContent='Enviar solicitud'; } toast(e.message,true); } }
 async function cancelarPer(id){ if(!confirm('¿Cancelar esta solicitud?')) return; try{ await sb.rpc('planta_permiso_cancelar',{p_token:S.ses.token,p_id:id}); toast('Solicitud cancelada'); await cargarPer(); }catch(e){ toast(e.message,true); } }
 
