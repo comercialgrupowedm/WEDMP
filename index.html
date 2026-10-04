@@ -638,6 +638,17 @@ function calMes(){
     g+=`<div class="mes-d ${fuera?'fu':''} ${iso(d)===iso(hoy)?'hoy':''} ${iso(d)===iso(sel)?'sel':''}" onclick="S.hSel='${iso(d)}';pintar()"><span>${d.getDate()}</span>${tx?`<i style="background:${c}">${tx}</i>`:''}${hr&&!o.vac?`<em>${esc(hr)}</em>`:''}${o.perm.length?`<u class="${o.perm.some(x=>x.estado==='aprobado')?'ok':''}"></u>`:''}</div>`; }
   return cab+g+'</div><div class="muted" style="font-size:11px;margin:6px 2px 10px">Punto verde = permiso aprobado · amarillo = pendiente. Toca un día para ver el detalle.</div>'+diaDetalle(sel); }
 
+
+/* Botón «atrás» del celular: vuelve a la pestaña anterior (o cierra la ventana abierta) en vez de sacarte de la app */
+(function(){
+  var pv0=pintar, ult=null, pop=false, ini=false;
+  pintar=function(){ try{ if(S.ses){ if(!ini){ ini=true; history.replaceState({pv:S.view},''); } else if(ult!==null&&S.view!==ult&&!pop){ history.pushState({pv:S.view},''); } ult=S.view; } else { ult=null; } }catch(e){} return pv0.apply(this,arguments); };
+  window.addEventListener('popstate',function(e){
+    try{ var ov=$('ov'); if(ov&&ov.classList.contains('open')){ ov.classList.remove('open'); history.pushState({pv:S.view},''); return; }
+      var lb=$('lb'); if(lb&&lb.style.display==='flex'){ lb.style.display='none'; history.pushState({pv:S.view},''); return; }
+      if(S.ses&&e.state&&e.state.pv&&e.state.pv!==S.view){ pop=true; S.view=e.state.pv; try{ pintar(); }finally{ pop=false; } } }catch(x){} });
+})();
+
 // ── ARRANQUE ──
 iniciar();
 
