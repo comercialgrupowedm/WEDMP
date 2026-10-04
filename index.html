@@ -505,7 +505,29 @@ setInterval(()=>{ if(S.ses&&S.view==='fic'&&!document.hidden&&!S.busy) cargarFic
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S.ses&&S.view==='fic') cargarFic(); });
 
 /* Permisos */
-const PTIPOS=[['Permiso personal','🙋'],['Cita médica','🩺'],['Calamidad doméstica','🏠'],['Vacaciones','🏖️'],['Cambio de turno','🔁'],['Llegada tarde / salida temprana','⏰'],['Olvidé marcar','📝'],['Otro','✏️']];
+// [nombre, icono, grupo, pago, multi-día, horas(0/1/2), etiqueta hora, nota legal]
+const PAGO={R:['💚 Remunerado','#166534','#dcfce7'],EPS:['💚 Pagado por EPS/ARL','#166534','#dcfce7'],C:['🟡 Descontable o compensable','#92400e','#fef3c7'],NR:['⚪ No remunerado','#475569','#e2e8f0']};
+const PGRUP=[['rem','💚 Remuneradas por ley'],['ss','🏥 Incapacidad, maternidad y paternidad'],['nr','⚪ No remuneradas / a convenir'],['adm','📋 Otros trámites']];
+const PTIPOS=[
+ ['Calamidad doméstica','🏠','rem','R',1,0,'','Art. 57-6 CST. Debe ser un hecho grave y comprobable; el tiempo lo define el reglamento interno.'],
+ ['Licencia de luto','🕊️','rem','R',1,0,'','Ley 1280/2009: 5 días hábiles por muerte de cónyuge, compañero(a) permanente o familiar hasta 2º grado de consanguinidad, 2º de afinidad o 1º civil. Presenta el registro civil de defunción (dentro de los 30 días siguientes).'],
+ ['Cita médica','🩺','rem','R',0,1,'Hora de la cita (opcional)','Ley 2466/2025 (art. 57-6 CST): urgencias o citas programadas con especialista. Avisa y presenta el certificado.'],
+ ['Citación judicial / legal','⚖️','rem','R',0,2,'','Ley 2466/2025: citaciones judiciales, administrativas o legales. Adjunta la citación.'],
+ ['Obligación escolar (acudiente)','🎒','rem','R',0,2,'','Ley 2466/2025: cuando tu asistencia como acudiente sea obligatoria. Presenta la citación del colegio.'],
+ ['Votación / jurado de votación','🗳️','rem','R',0,0,'','Ley 403/1997: votar da medio día remunerado; ser jurado de votación da un día remunerado (se disfruta dentro de los 45 días siguientes).'],
+ ['Día de la bicicleta','🚲','rem','R',0,0,'','Ley 1811/2016 y Ley 2466/2025: un día remunerado cada 6 meses si certificas que te desplazas en bicicleta al trabajo.'],
+ ['Vacaciones','🏖️','rem','R',1,0,'','Art. 186 CST: 15 días hábiles remunerados por cada año de servicio.'],
+ ['Incapacidad médica','🏥','ss','EPS',1,0,'','Incapacidad expedida por la EPS/ARL. Los 2 primeros días los paga la empresa; desde el día 3, la EPS (Decreto 2943/2013). Adjunta la incapacidad.'],
+ ['Licencia de maternidad','🤱','ss','EPS',1,0,'','Ley 1822/2017 y Ley 2114/2021: 18 semanas. Se tramita con el certificado de la EPS.'],
+ ['Licencia de paternidad','👶','ss','EPS',1,0,'','Ley 2114/2021: 2 semanas (también en adopción). Presenta el registro civil de nacimiento.'],
+ ['Permiso personal','🙋','nr','C',0,2,'','Permiso a convenir con la empresa: el tiempo puede descontarse o compensarse con horas de trabajo efectivo en otro momento (art. 57-6 CST).'],
+ ['Comisión sindical / entierro compañero','🤝','nr','C',0,2,'','Art. 57-6 CST: avisa con tiempo; el tiempo puede descontarse o compensarse, y no pueden ausentarse tantos que se afecte la operación.'],
+ ['Licencia no remunerada','📄','nr','NR',1,0,'','Art. 51-4 CST: licencia concedida por la empresa de común acuerdo; durante ella no se paga salario.'],
+ ['Llegada tarde / salida temprana','⏰','nr','C',0,2,'','Se descuenta o se compensa con horas en otro momento, según lo que acuerdes con Planeación.'],
+ ['Cambio de turno','🔁','adm','',0,0,'','No afecta el pago: es un intercambio de turno con tu jefe o Planeación.'],
+ ['Olvidé marcar','📝','adm','',0,1,'Hora que olvidaste (opcional)','Corrección de una marcación de entrada, pausa o salida.'],
+ ['Otro','✏️','adm','',1,2,'','Cuéntanos el motivo; Planeación define si es remunerado.']
+];
 async function cargarPer(){
   S.perCarg=true;
   try{ S.per=await sb.rpc('planta_mis_permisos',{p_token:S.ses.token})||[]; S.perErr=null; }
@@ -520,20 +542,21 @@ function vistaPer(){
   if(S.perErr) return tabs+`<div class="card"><b>⚠️ No se pudo cargar</b><p class="muted" style="margin:6px 0 12px">${esc(S.perErr)}</p><button class="btn b-pri" onclick="S.perErr=null;S.per=null;pintar()">Reintentar</button></div>`;
   if(!L.length) return tabs+nuevo+'<div class="empty">Aún no has hecho solicitudes.<br><span class="muted" style="font-size:12px">Pide permisos, citas, vacaciones o cambios de turno desde aquí.</span></div>';
   return tabs+nuevo+L.map(p=>{ const e=ESTP[p.estado]||ESTP.pendiente, ic=(PTIPOS.find(x=>x[0]===p.tipo)||['','📄'])[1];
-    return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><b>${ic} ${esc(p.tipo)}</b><div class="muted" style="font-size:13px">${rngF(p)}${p.hora_ini?' · '+esc(p.hora_ini)+(p.hora_fin?' – '+esc(p.hora_fin):''):''}</div></div><span style="background:${e[2]};color:${e[1]};border-radius:99px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap">${e[0]}</span></div>
+    return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><b>${ic} ${esc(p.tipo)}</b>${(TCFG[p.tipo]||{}).pago&&PAGO[TCFG[p.tipo].pago]?` <span style="background:${PAGO[TCFG[p.tipo].pago][2]};color:${PAGO[TCFG[p.tipo].pago][1]};border-radius:99px;padding:1px 8px;font-size:10.5px;font-weight:800;white-space:nowrap">${PAGO[TCFG[p.tipo].pago][0]}</span>`:''}<div class="muted" style="font-size:13px">${rngF(p)}${p.hora_ini?' · '+esc(p.hora_ini)+(p.hora_fin?' – '+esc(p.hora_fin):''):''}</div></div><span style="background:${e[2]};color:${e[1]};border-radius:99px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap">${e[0]}</span></div>
      ${p.motivo?`<div style="margin-top:6px;font-size:13.5px">${esc(p.motivo)}</div>`:''}
      ${p.respuesta?`<div style="margin-top:8px;background:#eff6ff;border-radius:10px;padding:8px 10px;font-size:13px">💬 ${esc(p.respuesta)}</div>`:''}
      ${p.estado==='pendiente'?`<button class="btn b-gh" style="margin-top:8px;min-height:38px" onclick="cancelarPer(${p.id})">Cancelar solicitud</button>`:''}</div>`; }).join('');
 }
 let PF={};
 function abrirPer(){ PF={tipo:'',desde:hoyISO(0),hasta:hoyISO(0),hi:'',hf:'',mot:''}; verPer(); }
-const TCFG={'Permiso personal':{multi:0,h:2},'Cita médica':{multi:0,h:1,hl:'Hora de la cita (opcional)'},'Calamidad doméstica':{multi:1,h:0},'Vacaciones':{multi:1,h:0},'Cambio de turno':{multi:0,h:0},'Llegada tarde / salida temprana':{multi:0,h:2},'Olvidé marcar':{multi:0,h:1,hl:'Hora que olvidaste (opcional)'},'Otro':{multi:1,h:2}};
+const TCFG={}; PTIPOS.forEach(t=>{ TCFG[t[0]]={multi:t[4],h:t[5],hl:t[6],g:t[2],pago:t[3],nota:t[7]}; });
 function verPer(){
   const C=TCFG[PF.tipo]||{multi:0,h:0}; if(!C.multi) PF.hasta=PF.desde;
   const dias=Math.round((new Date(PF.hasta)-new Date(PF.desde))/864e5)+1;
   sheet(`<h2><span>＋ Nueva solicitud</span><button class="x" onclick="cerrarSheet()">✕</button></h2>
    <label class="l">¿Qué necesitas?</label>
-   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">${PTIPOS.filter(t=>t[0]!=='Olvidé marcar'||(S.cfg&&S.cfg.fichaje)).map(t=>`<button class="btn ${PF.tipo===t[0]?'b-pri':'b-gh'}" style="min-height:48px;font-size:13px;padding:6px" onclick="PF.tipo='${t[0]}';verPer()">${t[1]} ${t[0]}</button>`).join('')}</div>
+   ${PGRUP.map(g=>{ const L=PTIPOS.filter(t=>t[2]===g[0]&&(t[0]!=='Olvidé marcar'||(S.cfg&&S.cfg.fichaje))); return L.length?`<div class="muted" style="font-size:12px;font-weight:800;margin:10px 2px 6px">${g[1]}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${L.map(t=>`<button class="btn ${PF.tipo===t[0]?'b-pri':'b-gh'}" style="min-height:48px;font-size:13px;padding:6px" onclick="PF.tipo='${t[0]}';verPer()">${t[1]} ${t[0]}</button>`).join('')}</div>`:''; }).join('')}
+   ${PF.tipo&&C.nota?`<div style="background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:9px 11px;font-size:12.5px;margin:12px 0 2px;line-height:1.45">${C.pago&&PAGO[C.pago]?`<span style="background:${PAGO[C.pago][2]};color:${PAGO[C.pago][1]};border-radius:99px;padding:2px 9px;font-size:11.5px;font-weight:800;display:inline-block;margin-bottom:5px">${PAGO[C.pago][0]}</span><br>`:''}${esc(C.nota)}</div>`:''}
    ${PF.tipo?`<div style="display:grid;grid-template-columns:${C.multi?'1fr 1fr':'1fr'};gap:8px"><div><label class="l">${C.multi?'Desde':'Fecha'}</label><input type="date" value="${PF.desde}" onchange="PF.desde=this.value;if(PF.hasta<PF.desde)PF.hasta=PF.desde;verPer()"></div>${C.multi?`<div><label class="l">Hasta</label><input type="date" value="${PF.hasta}" min="${PF.desde}" onchange="PF.hasta=this.value;verPer()"></div>`:''}</div>
    ${C.h?`<div style="display:grid;grid-template-columns:${C.h===2?'1fr 1fr':'1fr'};gap:8px"><div><label class="l">${C.hl||'Hora inicio (opcional)'}</label><input type="time" value="${PF.hi}" onchange="PF.hi=this.value"></div>${C.h===2?`<div><label class="l">Hora fin (opcional)</label><input type="time" value="${PF.hf}" onchange="PF.hf=this.value"></div>`:''}</div>`:''}
    ${PF.tipo==='Vacaciones'?`<div style="background:#ecfeff;border-radius:10px;padding:8px 10px;font-size:13px;margin:8px 0">🏖️ Pides <b>${dias} día(s) calendario</b>. Planeación revisa el cruce con el horario y te responde aquí.</div>`:''}
