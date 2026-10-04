@@ -322,18 +322,36 @@ async function terminar(id){
 async function descartar(id){ if(!confirm('¿Descartar este cronómetro? No se guardará ningún tiempo.')) return; try{ await sb.rpc('tiempos_descartar',{p_id:id,p_actor:(S.all.find(x=>x.id===id)||{}).colaborador}); cerrarSheet(); toast('Descartado'); refrescar(); }catch(e){ toast(e.message,true); } }
 
 // ── 🆕 NUEVO · INGRESO CON USUARIO Y CÓDIGO + MI HORARIO ──
-let LG={pin:''};
+let LG={pin:'',u:'',lista:undefined};
 function pantallaLogin(){
-  LG.pin=''; $('ttl').textContent='Planta · Ingreso'; headSes();
-  $('main').innerHTML=`<div class="card" style="max-width:420px;margin:10px auto"><h2 style="font-size:18px;text-align:center">👷 Ingresa</h2><p class="muted" style="text-align:center;margin:4px 0 12px">Escribe tu usuario y tu código</p>
-   <input type="text" id="lg-u" placeholder="Usuario (ej: Alex)" autocomplete="username" autocapitalize="none" autocorrect="off" value="${esc(localStorage.getItem('planta_u')||'')}" style="text-align:center;font-size:18px">
+  LG.pin=''; LG.u=LG.u||''; $('ttl').textContent='Planta · Ingreso'; headSes();
+  if(!LG.u){ try{ LG.u=localStorage.getItem('planta_u')||''; }catch(e){} }
+  if(LG.lista===undefined){ LG.lista=null; sb.rpc('planta_usuarios').then(r=>{ LG.lista=Array.isArray(r)?r:[]; if(!LG.u&&!S.ses) lgBuscar(); lgSel(); }).catch(()=>{ LG.lista=[]; }); }
+  lgVista(); }
+function lgVista(){
+  const sel=LG.u?((LG.lista||[]).find(x=>x.usuario===LG.u)||{usuario:LG.u,nombre:LG.u}):null;
+  const hayLista=LG.lista&&LG.lista.length;
+  if(!sel&&hayLista){
+    $('main').innerHTML=`<div class="card" style="max-width:420px;margin:10px auto"><h2 style="font-size:18px;text-align:center">👷 ¿Quién eres?</h2><p class="muted" style="text-align:center;margin:4px 0 12px">Busca tu nombre y tócalo</p>
+      <input type="search" id="lg-q" placeholder="🔍 Buscar mi nombre…" autocomplete="off" oninput="lgBuscar()" style="text-align:center;font-size:17px">
+      <div id="lg-l" style="margin-top:10px;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px"></div></div>`;
+    lgBuscar(); return; }
+  const ini=sel?inic(sel.nombre):'';
+  $('main').innerHTML=`<div class="card" style="max-width:420px;margin:10px auto"><h2 style="font-size:18px;text-align:center">👷 Ingresa</h2>
+   ${sel&&hayLista?`<div style="display:flex;align-items:center;gap:10px;justify-content:center;margin:8px 0 2px"><div style="width:42px;height:42px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${esc(ini)}</div><div style="text-align:left"><b style="font-size:16px">${esc(sel.nombre)}</b>${sel.cargo?`<div class="muted" style="font-size:12px">${esc(sel.cargo)}</div>`:''}</div></div><div style="text-align:center"><a href="#" onclick="LG.u='';lgVista();return false" style="font-size:12.5px;color:var(--accent)">No soy yo · cambiar</a></div>`
+   :`<p class="muted" style="text-align:center;margin:4px 0 12px">Escribe tu usuario y tu código</p><input type="text" id="lg-u" placeholder="Usuario (ej: Alex)" autocomplete="username" autocapitalize="none" autocorrect="off" value="${esc(LG.u)}" style="text-align:center;font-size:18px">`}
    <div class="pin" id="lg-dots"></div><div class="err" id="lg-err"></div>
    <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button onclick="lgKey('${n}')">${n}</button>`).join('')}<button onclick="lgKey('b')" style="font-size:18px">⌫</button><button onclick="lgKey('0')">0</button><button onclick="doLogin()" style="background:var(--accent);color:#fff;font-size:18px">Entrar</button></div></div>`;
   lgDots(); }
+function lgBuscar(){ const l=$('lg-l'); if(!l) return; const q=limpio(($('lg-q')||{}).value||'').toLowerCase(); const n=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const r=(LG.lista||[]).filter(x=>!q||n(x.nombre).includes(n(q))||n(x.usuario).includes(n(q))||n(x.cargo).includes(n(q)));
+  l.innerHTML=r.length?r.map((x,i)=>`<button onclick="lgElegir(${(LG.lista||[]).indexOf(x)})" style="display:flex;align-items:center;gap:12px;text-align:left;border:1.5px solid var(--border);background:#fff;border-radius:14px;padding:10px 12px;cursor:pointer"><span style="width:40px;height:40px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0">${esc(inic(x.nombre))}</span><span><b style="font-size:15px">${esc(x.nombre)}</b>${x.cargo?`<span class="muted" style="display:block;font-size:12px">${esc(x.cargo)}</span>`:''}</span></button>`).join(''):'<p class="muted" style="text-align:center">No encuentro ese nombre</p>'; }
+function lgSel(){ if(!S.ses&&S.login) lgVista(); }
+function lgElegir(i){ const x=(LG.lista||[])[i]; if(!x) return; LG.u=x.usuario; lgVista(); }
 function lgDots(){ const d=$('lg-dots'); if(!d) return; const n=Math.max(4,LG.pin.length); d.innerHTML=Array.from({length:n},(_,i)=>`<i class="${i<LG.pin.length?'f':''}"></i>`).join(''); }
 function lgKey(k){ if(k==='b') LG.pin=LG.pin.slice(0,-1); else if(LG.pin.length<8) LG.pin+=k; $('lg-err').textContent=''; lgDots(); }
 async function doLogin(){
-  const u=limpio($('lg-u').value); if(!u){ $('lg-err').textContent='Escribe tu usuario'; return; } if(LG.pin.length<4){ $('lg-err').textContent='Escribe tu código (mínimo 4 números)'; return; }
+  const u=limpio(($('lg-u')||{}).value||LG.u||''); if(!u){ $('lg-err').textContent='Escribe tu usuario'; return; } if(LG.pin.length<4){ $('lg-err').textContent='Escribe tu código (mínimo 4 números)'; return; }
   try{ const r=await sb.rpc('planta_login',{p_usuario:u,p_pin:LG.pin});
     if(!r||!r.ok){ LG.pin=''; lgDots(); $('lg-err').textContent=(r&&r.msg)||'No se pudo ingresar'; return; }
     S.ses=r; S.view='reg'; S.hor=null; try{ localStorage.setItem('planta_ses',JSON.stringify(r)); localStorage.setItem('planta_u',u); }catch(e){}
@@ -341,11 +359,11 @@ async function doLogin(){
   }catch(e){ $('lg-err').textContent=e.message; }
 }
 async function salir(silencio){
-  const t=S.ses&&S.ses.token; S.ses=null; S.hor=null; S.view='reg'; try{ localStorage.removeItem('planta_ses'); }catch(e){}
+  const t=S.ses&&S.ses.token; S.ses=null; S.hor=null; S.view='reg'; try{ localStorage.removeItem('planta_ses'); localStorage.removeItem('planta_u'); LG.u=''; }catch(e){}
   if(t){ try{ await sb.rpc('planta_salir',{p_token:t}); }catch(e){} }
   if(!silencio) toast('Sesión cerrada'); pantallaLogin(); }
 function headSes(){ const t=$('top'); if(!t) return; let b=$('salir'); if(S.ses){ if(!b){ b=document.createElement('button'); b.id='salir'; b.className='tb'; b.title='Salir'; b.style.cssText='width:auto;padding:0 12px;font-size:13px;font-weight:800'; b.textContent='Salir'; b.onclick=()=>salir(); t.insertBefore(b,$('bsync')); } } else if(b) b.remove(); }
-let _idle=null; function idleReset(){ clearTimeout(_idle); if(S.ses) _idle=setTimeout(()=>{ if(S.ses) salir(true); },10*60*1000); }
+let _idle=null; function idleReset(){ return; /* la sesión queda iniciada hasta pulsar «Salir» */  clearTimeout(_idle); if(S.ses) _idle=setTimeout(()=>{ if(S.ses) salir(true); },10*60*1000); }
 ['pointerdown','keydown','touchstart'].forEach(e=>document.addEventListener(e,idleReset,{passive:true}));
 function vistaInicioMi(){
   const me=S.ses.colaborador, mios=S.all.filter(t=>t.colaborador===me), otros=S.all.filter(t=>t.colaborador!==me), hh=(S.hist||[]).filter(r=>r.colaborador===me), tot=hh.reduce((a,r)=>a+(Number(r.duracion_horas)||0),0);
