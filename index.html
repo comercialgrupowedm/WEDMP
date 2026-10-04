@@ -103,6 +103,8 @@ label.l{display:block;font-size:11.5px;font-weight:800;color:var(--muted);text-t
 .pic.big{width:min(100%,260px);height:auto;max-height:220px;object-fit:contain}
 #lb{position:fixed;inset:0;background:rgba(2,6,23,.9);z-index:95;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:14px}
 #lb img{max-width:100%;max-height:86vh;border-radius:12px;background:#fff}#lb span{color:#cbd5e1;font-size:12px}
+.seg5{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;background:#e2e8f0;border-radius:14px;padding:4px;margin-bottom:12px}.seg5 button{border:0;background:transparent;border-radius:11px;min-height:52px;font-weight:800;font-size:10.5px;color:#475569;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:4px 1px;line-height:1.15}.seg5 button span{font-size:18px}.seg5 button.on{background:#fff;color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.b-bad{background:#dc2626;color:#fff}
 </style></head>
 <body>
 <div id="top">
@@ -141,12 +143,13 @@ const ahora=()=>Date.now()+S.skew;
 async function iniciar(){
   $('main').innerHTML='<div class="empty">Cargando…</div>';
   if(S.login==null){ try{ S.login=!!(await sb.rpc('planta_login_activo')); }catch(e){ S.login=false; } }
-  if(S.login&&!S.ses){ try{ const g=JSON.parse(localStorage.getItem('planta_ses')||'null'); if(g&&g.token&&new Date(g.expira)>new Date()) S.ses=g; }catch(e){} }
+  if(S.login&&!S.ses){ try{ const g=JSON.parse(localStorage.getItem('planta_ses')||'null'); if(g&&g.token&&new Date(g.expira)>new Date()){ S.ses=g; S.view='fic'; } }catch(e){} }
   if(S.login&&!S.ses){ pantallaLogin(); return; }
   try{ S.cat=await sb.rpc('tiempos_catalogo'); }
   catch(e){ $('main').innerHTML=`<div class="card"><b>⚠️ No se pudo cargar</b><p class="muted" style="margin:6px 0 12px">${esc(e.message)}</p>${/tiempos_catalogo|does not exist|Could not find/i.test(e.message)?'<p class="muted" style="margin-bottom:12px">Falta ejecutar <b>03_tiempos_operarios.sql</b> en Supabase (SQL Editor).</p>':''}<button class="btn b-pri" onclick="iniciar()">Reintentar</button></div>`; return; }
-  S.cat=S.cat||{}; await refrescar(); }
-async function refrescar(manual){
+  S.cat=S.cat||{}; if(S.ses) await cargarCfg(); await refrescar(); }
+async function cargarCfg(){ if(S.ses&&!S.perfil&&!S.perfCarg){ S.perfCarg=true; cargarPerfil().finally(()=>S.perfCarg=false); } try{ const c=await sb.rpc('planta_config'); const ch=!S.cfg||S.cfg.fichaje!==c.fichaje||S.cfg.permisos!==c.permisos; S.cfg=c; if(ch&&S.ses) pintar(); }catch(e){ if(!S.cfg) S.cfg={fichaje:false,permisos:false}; } }
+async function refrescar(manual){ if(S.ses) cargarCfg();
   const b=$('bsync'); if(b) b.style.opacity=.5;
   try{
     const r=await sb.rpc('tiempos_planta',{p_col:null}); S.all=r.en_curso||[]; S.hist=r.hist||[];
@@ -172,7 +175,8 @@ function tarjetaTimer(t,mio){
 }
 async function accion(a,id){ if(S.busy) return; S.busy=true; try{ const r=await sb.rpc(a==='pausar'?'tiempos_pausar':'tiempos_reanudar',{p_id:id,p_actor:(S.all.find(x=>x.id===id)||{}).colaborador}); const i=S.all.findIndex(x=>x.id===id); if(i>-1&&r){ delete r.ahora; S.all[i]=r; } pintar(); }catch(e){ toast(e.message,true); refrescar(); } S.busy=false; }
 // ── PANTALLAS ──
-function pintar(){ if(S.login&&!S.ses) return; $('ttl').textContent=S.ses?'Hola, '+limpio(S.ses.nombre).split(' ')[0]:'Planta · Tiempos'; headSes(); $('main').innerHTML=(S.ses&&S.view==='hor')?vistaHorario():vistaInicio(); if(S.ses&&S.view==='hor'&&!S.hor&&!S.horCarg) cargarHorario(); }
+function pintar(){ if(S.login&&!S.ses) return; $('ttl').textContent=S.ses?'Hola, '+limpio(S.ses.nombre).split(' ')[0]:'Planta · Tiempos'; headSes(); const C=S.cfg||{}; if(S.ses&&((S.view==='fic'&&!C.fichaje)||(S.view==='per'&&!C.permisos))) S.view='reg'; const v=S.ses?S.view:'reg'; $('main').innerHTML=v==='hor'?vistaHorario():v==='tar'?vistaTareas():v==='fic'?vistaFic():v==='per'?vistaPer():vistaInicio();
+  if(!S.ses) return; if(v==='hor'&&!S.hor&&!S.horCarg) cargarHorario(); if(v==='tar'&&!S.tar&&!S.tarCarg) cargarTareas(); if(v==='fic'){ if(!S.fic&&!S.ficCarg&&!S.ficErr) cargarFic(); if(!S.hor&&!S.horCarg) cargarHorario(); if(!S.tar&&!S.tarCarg&&!S.tarErr) cargarTareas(); } if(v==='per'&&!S.per&&!S.perCarg&&!S.perErr) cargarPer(); }
 function vistaInicio(){
   if(S.ses) return vistaInicioMi();
   const hh=S.hist||[]; const tot=hh.reduce((a,r)=>a+(Number(r.duracion_horas)||0),0);
@@ -326,26 +330,27 @@ let LG={pin:'',u:'',lista:undefined};
 function pantallaLogin(){
   LG.pin=''; LG.u=LG.u||''; $('ttl').textContent='Planta · Ingreso'; headSes();
   if(!LG.u){ try{ LG.u=localStorage.getItem('planta_u')||''; }catch(e){} }
-  if(LG.lista===undefined){ LG.lista=null; sb.rpc('planta_usuarios').then(r=>{ LG.lista=Array.isArray(r)?r:[]; if(!LG.u&&!S.ses) lgBuscar(); lgSel(); }).catch(()=>{ LG.lista=[]; }); }
+  if(LG.lista===undefined){ LG.lista=null; sb.rpc('planta_usuarios').then(r=>{ LG.lista=Array.isArray(r)?r:[]; lgSel(); }).catch(()=>{ LG.lista=[]; lgSel(); }); }
   lgVista(); }
 function lgVista(){
-  const sel=LG.u?((LG.lista||[]).find(x=>x.usuario===LG.u)||{usuario:LG.u,nombre:LG.u}):null;
-  const hayLista=LG.lista&&LG.lista.length;
-  if(!sel&&hayLista){
+  const sel=LG.u?((LG.lista||[]).find(x=>x.usuario===LG.u)||null):null;
+  if(!sel){
+    if(LG.lista===null||LG.lista===undefined){ $('main').innerHTML='<div class="card" style="max-width:420px;margin:10px auto;text-align:center"><div class="empty">Cargando…</div></div>'; return; }
+    if(!LG.lista.length){ $('main').innerHTML='<div class="card" style="max-width:420px;margin:10px auto;text-align:center"><h2 style="font-size:18px">👷 Ingreso</h2><p class="muted" style="margin:8px 0 12px">Aún no hay personas con código asignado. Pídele a Planeación que te dé tu código.</p><button class="btn b-pri" onclick="LG.lista=undefined;pantallaLogin()">Reintentar</button></div>'; return; }
     $('main').innerHTML=`<div class="card" style="max-width:420px;margin:10px auto"><h2 style="font-size:18px;text-align:center">👷 ¿Quién eres?</h2><p class="muted" style="text-align:center;margin:4px 0 12px">Busca tu nombre y tócalo</p>
       <input type="search" id="lg-q" placeholder="🔍 Buscar mi nombre…" autocomplete="off" oninput="lgBuscar()" style="text-align:center;font-size:17px">
       <div id="lg-l" style="margin-top:10px;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px"></div></div>`;
     lgBuscar(); return; }
-  const ini=sel?inic(sel.nombre):'';
   $('main').innerHTML=`<div class="card" style="max-width:420px;margin:10px auto"><h2 style="font-size:18px;text-align:center">👷 Ingresa</h2>
-   ${sel&&hayLista?`<div style="display:flex;align-items:center;gap:10px;justify-content:center;margin:8px 0 2px"><div style="width:42px;height:42px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${esc(ini)}</div><div style="text-align:left"><b style="font-size:16px">${esc(sel.nombre)}</b>${sel.cargo?`<div class="muted" style="font-size:12px">${esc(sel.cargo)}</div>`:''}</div></div><div style="text-align:center"><a href="#" onclick="LG.u='';lgVista();return false" style="font-size:12.5px;color:var(--accent)">No soy yo · cambiar</a></div>`
-   :`<p class="muted" style="text-align:center;margin:4px 0 12px">Escribe tu usuario y tu código</p><input type="text" id="lg-u" placeholder="Usuario (ej: Alex)" autocomplete="username" autocapitalize="none" autocorrect="off" value="${esc(LG.u)}" style="text-align:center;font-size:18px">`}
+   <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin:8px 0 2px">${avHtml(sel.nombre,sel.foto,42)}<div style="text-align:left"><b style="font-size:16px">${esc(sel.nombre)}</b>${sel.cargo?`<div class="muted" style="font-size:12px">${esc(sel.cargo)}</div>`:''}</div></div>
+   <div style="text-align:center"><a href="#" onclick="LG.u='';try{localStorage.removeItem('planta_u')}catch(e){};lgVista();return false" style="font-size:12.5px;color:var(--accent)">No soy yo · cambiar</a></div>
+   <p class="muted" style="text-align:center;margin:8px 0 0">Escribe tu código</p>
    <div class="pin" id="lg-dots"></div><div class="err" id="lg-err"></div>
    <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button onclick="lgKey('${n}')">${n}</button>`).join('')}<button onclick="lgKey('b')" style="font-size:18px">⌫</button><button onclick="lgKey('0')">0</button><button onclick="doLogin()" style="background:var(--accent);color:#fff;font-size:18px">Entrar</button></div></div>`;
   lgDots(); }
 function lgBuscar(){ const l=$('lg-l'); if(!l) return; const q=limpio(($('lg-q')||{}).value||'').toLowerCase(); const n=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const r=(LG.lista||[]).filter(x=>!q||n(x.nombre).includes(n(q))||n(x.usuario).includes(n(q))||n(x.cargo).includes(n(q)));
-  l.innerHTML=r.length?r.map((x,i)=>`<button onclick="lgElegir(${(LG.lista||[]).indexOf(x)})" style="display:flex;align-items:center;gap:12px;text-align:left;border:1.5px solid var(--border);background:#fff;border-radius:14px;padding:10px 12px;cursor:pointer"><span style="width:40px;height:40px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0">${esc(inic(x.nombre))}</span><span><b style="font-size:15px">${esc(x.nombre)}</b>${x.cargo?`<span class="muted" style="display:block;font-size:12px">${esc(x.cargo)}</span>`:''}</span></button>`).join(''):'<p class="muted" style="text-align:center">No encuentro ese nombre</p>'; }
+  l.innerHTML=r.length?r.map((x,i)=>`<button onclick="lgElegir(${(LG.lista||[]).indexOf(x)})" style="display:flex;align-items:center;gap:12px;text-align:left;border:1.5px solid var(--border);background:#fff;border-radius:14px;padding:10px 12px;cursor:pointer">${avHtml(x.nombre,x.foto,40)}<span><b style="font-size:15px">${esc(x.nombre)}</b>${x.cargo?`<span class="muted" style="display:block;font-size:12px">${esc(x.cargo)}</span>`:''}</span></button>`).join(''):'<p class="muted" style="text-align:center">No encuentro ese nombre</p>'; }
 function lgSel(){ if(!S.ses&&S.login) lgVista(); }
 function lgElegir(i){ const x=(LG.lista||[])[i]; if(!x) return; LG.u=x.usuario; lgVista(); }
 function lgDots(){ const d=$('lg-dots'); if(!d) return; const n=Math.max(4,LG.pin.length); d.innerHTML=Array.from({length:n},(_,i)=>`<i class="${i<LG.pin.length?'f':''}"></i>`).join(''); }
@@ -354,20 +359,46 @@ async function doLogin(){
   const u=limpio(($('lg-u')||{}).value||LG.u||''); if(!u){ $('lg-err').textContent='Escribe tu usuario'; return; } if(LG.pin.length<4){ $('lg-err').textContent='Escribe tu código (mínimo 4 números)'; return; }
   try{ const r=await sb.rpc('planta_login',{p_usuario:u,p_pin:LG.pin});
     if(!r||!r.ok){ LG.pin=''; lgDots(); $('lg-err').textContent=(r&&r.msg)||'No se pudo ingresar'; return; }
-    S.ses=r; S.view='reg'; S.hor=null; try{ localStorage.setItem('planta_ses',JSON.stringify(r)); localStorage.setItem('planta_u',u); }catch(e){}
+    S.ses=r; S.view='fic'; S.hor=null; S.tar=null; S.fic=null; S.per=null; S.perfil=null; try{ localStorage.setItem('planta_ses',JSON.stringify(r)); localStorage.setItem('planta_u',u); }catch(e){}
     LG.pin=''; idleReset(); await iniciar();
   }catch(e){ $('lg-err').textContent=e.message; }
 }
 async function salir(silencio){
-  const t=S.ses&&S.ses.token; S.ses=null; S.hor=null; S.view='reg'; try{ localStorage.removeItem('planta_ses'); localStorage.removeItem('planta_u'); LG.u=''; }catch(e){}
+  const t=S.ses&&S.ses.token; S.ses=null; S.hor=null; S.tar=null; S.fic=null; S.per=null; S.perfil=null; S.view='reg'; try{ localStorage.removeItem('planta_ses'); localStorage.removeItem('planta_u'); LG.u=''; }catch(e){}
   if(t){ try{ await sb.rpc('planta_salir',{p_token:t}); }catch(e){} }
   if(!silencio) toast('Sesión cerrada'); pantallaLogin(); }
-function headSes(){ const t=$('top'); if(!t) return; let b=$('salir'); if(S.ses){ if(!b){ b=document.createElement('button'); b.id='salir'; b.className='tb'; b.title='Salir'; b.style.cssText='width:auto;padding:0 12px;font-size:13px;font-weight:800'; b.textContent='Salir'; b.onclick=()=>salir(); t.insertBefore(b,$('bsync')); } } else if(b) b.remove(); }
+function avHtml(n,f,z){ z=z||40; return f?`<img src="${esc(f)}" alt="" style="width:${z}px;height:${z}px;border-radius:50%;object-fit:cover;flex-shrink:0;background:#e2e8f0">`:`<span style="width:${z}px;height:${z}px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.round(z*.38)}px;flex-shrink:0">${esc(inic(n))}</span>`; }
+function headSes(){ const t=$('top'); if(!t) return; let b=$('salir'), v=$('mperfil'); if(S.ses){ if(!b){ b=document.createElement('button'); b.id='salir'; b.className='tb'; b.title='Salir'; b.style.cssText='width:auto;padding:0 12px;font-size:13px;font-weight:800'; b.textContent='Salir'; b.onclick=()=>salir(); t.insertBefore(b,$('bsync')); }
+    if(!v){ v=document.createElement('button'); v.id='mperfil'; v.title='Mi perfil'; v.style.cssText='border:0;background:transparent;padding:0;cursor:pointer;display:flex'; v.onclick=abrirPerfil; t.insertBefore(v,b); }
+    const h=avHtml(S.ses.nombre,S.perfil&&S.perfil.foto,34); if(v.dataset.h!==h){ v.innerHTML=h; v.dataset.h=h; } } else { if(b) b.remove(); if(v) v.remove(); } }
 let _idle=null; function idleReset(){ return; /* la sesión queda iniciada hasta pulsar «Salir» */  clearTimeout(_idle); if(S.ses) _idle=setTimeout(()=>{ if(S.ses) salir(true); },10*60*1000); }
 ['pointerdown','keydown','touchstart'].forEach(e=>document.addEventListener(e,idleReset,{passive:true}));
+
+/* ── Mis tareas: lo que Planeación me asignó ── */
+function segHtml(a){ const C=S.cfg||{}; const b=(k,ic,t)=>`<button class="${a===k?'on':''}" onclick="S.view='${k}';pintar()"><span>${ic}</span>${t}</button>`; const pp=(S.per||[]).filter(x=>x.estado==='pendiente').length; const bs=[C.fichaje?b('fic','🕒','Fichar'):'',b('reg','⏱','Tiempos'),b('tar','📋','Tareas'+(S.tar&&S.tar.length?' · '+S.tar.length:'')),b('hor','📅','Horario'),C.permisos?b('per','📝','Permisos'+(pp?' · '+pp:'')):''].filter(Boolean); return `<div class="seg5" style="grid-template-columns:repeat(${bs.length},1fr)">${bs.join('')}</div>`; }
+async function cargarTareas(){
+  S.tarCarg=true;
+  try{ S.tar=await sb.rpc('planta_mis_tareas',{p_token:S.ses.token})||[]; S.tarErr=null; }
+  catch(e){ S.tarCarg=false; if(/venci|sesi/i.test(e.message)){ toast(e.message,true); salir(true); return; } S.tar=[]; S.tarErr=/planta_mis_tareas/i.test(e.message)?'Esta función todavía no está activada.':e.message; }
+  S.tarCarg=false; if(S.view==='tar') pintar(); }
+function diasPact(f){ if(!f) return null; const a=new Date(String(f).slice(0,10)+'T00:00:00'), h=new Date(); h.setHours(0,0,0,0); return Math.round((a-h)/86400000); }
+function vistaTareas(){
+  const tabs=segHtml('tar');
+  if(!S.tar) return tabs+'<div class="empty">Cargando tus tareas…</div>';
+  if(S.tarErr) return tabs+`<div class="card"><b>⚠️ No se pudieron cargar</b><p class="muted" style="margin:6px 0 12px">${esc(S.tarErr)}</p><button class="btn b-pri" onclick="S.tar=null;S.tarErr=null;pintar()">Reintentar</button></div>`;
+  if(!S.tar.length) return tabs+'<div class="empty">No tienes tareas asignadas por ahora.<br><span class="muted" style="font-size:12px">Cuando Planeación te asigne un trabajo, aparece aquí.</span></div><button class="btn b-gh" style="margin-top:12px" onclick="S.tar=null;pintar()">↻ Actualizar</button>';
+  return tabs+S.tar.map(t=>{ const d=diasPact(t.pactada); const c=d==null?'var(--muted)':d<0?'var(--danger)':d<=3?'var(--warn)':'var(--ok)'; const tx=d==null?'Sin fecha':d<0?'Vencida hace '+(-d)+' d':d===0?'Entrega hoy':'Faltan '+d+' d';
+    return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><b style="font-size:16px">OP-${esc(t.op)} · Ítem ${esc(t.item_num)}</b><div class="muted" style="font-size:12.5px">${esc(t.empresa||'')}</div></div><span style="font-size:12px;font-weight:800;color:${c};white-space:nowrap">${esc(tx)}</span></div>
+     <div style="margin:6px 0;font-size:14px">${esc(t.descripcion||'')}</div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><span class="muted" style="font-size:12px;background:#eef2f7;border-radius:99px;padding:3px 10px">🔧 Paso ${esc(t.paso)}${t.maquina?': '+esc(t.maquina):''}</span>${t.estado?`<span class="muted" style="font-size:12px;background:#eef2f7;border-radius:99px;padding:3px 10px">${esc(t.estado)}</span>`:''}${t.avance!=null?`<span class="muted" style="font-size:12px;background:#eef2f7;border-radius:99px;padding:3px 10px">${Math.round(Number(t.avance)||0)}% avance</span>`:''}</div>
+     ${t.nota?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:8px">📝 ${esc(t.nota)}</div>`:''}
+     <button class="btn b-ok" onclick="iniciarTarea('${esc(t.op)}','${esc(t.item_num)}')">▶ Iniciar esta tarea</button></div>`; }).join('')
+   +'<button class="btn b-gh" style="margin-top:4px" onclick="S.tar=null;pintar()">↻ Actualizar</button>'; }
+function iniciarTarea(op,item){ abrirForm('iniciar'); W.tipo=TIPOS[0][0]; W.op=String(op); W.item=Number(item); vista();
+  setTimeout(()=>{ if($('w-op')){ buscarOp(String(op)); const it=Number(item); const t=setInterval(()=>{ if(W.buscado){ clearInterval(t); elegirItem(it); } },200); setTimeout(()=>clearInterval(t),5000); } },80); }
 function vistaInicioMi(){
   const me=S.ses.colaborador, mios=S.all.filter(t=>t.colaborador===me), otros=S.all.filter(t=>t.colaborador!==me), hh=(S.hist||[]).filter(r=>r.colaborador===me), tot=hh.reduce((a,r)=>a+(Number(r.duracion_horas)||0),0);
-  return `<div class="seg"><button class="on" onclick="S.view='reg';pintar()">⏱ Registrar</button><button onclick="S.view='hor';pintar()">📅 Mi horario<span class="nuevo-b">NUEVO</span></button></div>
+  return `${segHtml('reg')}
   <button class="btn b-ok big" onclick="abrirForm('iniciar')">▶ Iniciar trabajo</button>
   <button class="btn b-gh big" style="margin-top:10px;min-height:54px;font-size:15px" onclick="abrirForm('manual')">🕘 Ya terminé, registrar</button>
   <h3>Mis cronómetros${mios.length?' · '+mios.length:''}</h3>
@@ -392,7 +423,7 @@ async function cargarHorario(){
   catch(e){ S.horCarg=false; if(/venci|sesi/i.test(e.message)){ toast(e.message,true); salir(true); return; } S.hor={err:e.message}; }
   S.horCarg=false; if(S.view==='hor') pintar(); }
 function vistaHorario(){
-  const tabs=`<div class="seg"><button onclick="S.view='reg';pintar()">⏱ Registrar</button><button class="on">📅 Mi horario<span class="nuevo-b">NUEVO</span></button></div>`;
+  const tabs=segHtml('hor');
   const H=S.hor; if(!H) return tabs+'<div class="empty">Cargando tu horario…</div>';
   if(H.err) return tabs+`<div class="card"><b>⚠️ No se pudo cargar</b><p class="muted" style="margin:6px 0 12px">${esc(H.err)}</p><button class="btn b-pri" onclick="S.hor=null;pintar()">Reintentar</button></div>`;
   const hoy=hzD(H.hoy), dow=hoy.getDay(), lun=H.lunes, sem=H.semanas||[];
@@ -407,6 +438,125 @@ function vistaHorario(){
   return tabs+hero+`<h3>Mis próximas semanas</h3><div class="card" style="padding:4px 14px">${ws.length?ws.map(fila).join(''):'<div class="empty">No hay semanas cargadas desde hoy.</div>'}</div>
   ${maq.length?`<h3>Mis máquinas</h3><div class="card"><div class="muted" style="margin-bottom:8px">Las que has marcado en los últimos meses</div>${maq.slice(0,8).map(m=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--border);font-size:13.5px"><span><b>${esc(m.maquina||'—')}</b>${m.proceso?` <small class="muted">${esc(m.proceso)}</small>`:''}</span><span class="muted">${Number(m.horas||0).toFixed(0)} h</span></div>`).join('')}</div>`:''}`;
 }
+
+/* ── Sesame WEDM: fichaje (entrada / pausa / salida) + permisos ── */
+const fHora=(t,seg)=>new Date(t).toLocaleTimeString('es-CO',{timeZone:'America/Bogota',hour:'2-digit',minute:'2-digit',second:seg?'2-digit':undefined,hour12:true});
+const fDia=t=>new Date(t).toLocaleDateString('es-CO',{timeZone:'America/Bogota',weekday:'short',day:'numeric',month:'short'});
+const fClk=()=>fHora(ahora(),true).replace(/\s*([ap])\.?\s*m\.?/i,(m,x)=>'<small style="font-size:16px;font-weight:800;color:var(--muted);margin-left:4px">'+x.toLowerCase()+'m</small>');
+const fMin=m=>{ m=Math.max(0,Math.round(m||0)); const h=Math.floor(m/60); return (h?h+' h ':'')+(m%60)+' min'; };
+async function cargarFic(){
+  S.ficCarg=true;
+  try{ S.fic=await sb.rpc('planta_fichaje_estado',{p_token:S.ses.token}); S.fic._t=Date.now(); S.ficErr=null; }
+  catch(e){ if(/venci|sesi/i.test(e.message)){ toast(e.message,true); salir(true); return; } S.ficErr=/planta_fichaje_estado/i.test(e.message)?'Esta función todavía no está activada.':e.message; }
+  S.ficCarg=false; if(S.view==='fic') pintar(); }
+function ficTrab(){ const F=S.fic; if(!F) return 0; const d=(F.dias||[]).find(x=>x.abierta); if(!d) return 0; let m=d.trab_min||0; if(F.estado==='dentro') m+=(Date.now()-F._t)/60000; return m; }
+function ubicar(){ return new Promise(res=>{ if(!navigator.geolocation) return res(null); let hecho=false; const fin=v=>{ if(!hecho){ hecho=true; res(v); } }; setTimeout(()=>fin(null),6000);
+  try{ navigator.geolocation.getCurrentPosition(p=>fin({lat:p.coords.latitude,lng:p.coords.longitude,pr:p.coords.accuracy}),()=>fin(null),{enableHighAccuracy:true,timeout:5500,maximumAge:60000}); }catch(e){ fin(null); } }); }
+async function fichar(tipo){
+  if(S.busy) return; S.busy=true; document.querySelectorAll('.fbtn').forEach(b=>b.disabled=true);
+  try{ const g=await ubicar();
+    S.fic=await sb.rpc('planta_fichar',{p_token:S.ses.token,p_tipo:tipo,p_lat:g?g.lat:null,p_lng:g?g.lng:null,p_precision:g?g.pr:null}); S.fic._t=Date.now();
+    cerrarSheet(); toast({entrada:'✅ Entrada marcada',pausa_ini:'☕ Pausa iniciada',pausa_fin:'▶ De vuelta al trabajo',salida:'👋 Salida marcada. ¡Buen descanso!'}[tipo]+(g?' · 📍':''));
+  }catch(e){ if(/venci|sesi/i.test(e.message)){ toast(e.message,true); S.busy=false; salir(true); return; } toast(e.message,true); await cargarFic(); }
+  S.busy=false; if(S.view==='fic') pintar(); }
+function confSalida(){ sheet(`<div style="text-align:center"><div style="font-size:34px">👋</div><div style="font-size:18px;font-weight:800;margin:4px 0">¿Marcar tu salida?</div><div class="muted" style="margin-bottom:14px">Llevas ${fMin(ficTrab())} trabajados hoy.</div><div class="row"><button class="btn b-gh" onclick="cerrarSheet()">Cancelar</button><button class="btn b-bad fbtn" onclick="fichar('salida')">Sí, marcar salida</button></div></div>`); }
+function vistaFic(){
+  const tabs=segHtml('fic'); const F=S.fic;
+  if(!F&&!S.ficErr) return tabs+'<div class="empty">Cargando…</div>';
+  if(S.ficErr) return tabs+`<div class="card"><b>⚠️ No se pudo cargar</b><p class="muted" style="margin:6px 0 12px">${esc(S.ficErr)}</p><button class="btn b-pri" onclick="S.ficErr=null;S.fic=null;pintar()">Reintentar</button></div>`;
+  const est=F.estado, dentro=est==='dentro', pausa=est==='pausa', olv=est==='olvido';
+  const col=dentro?'#16a34a':pausa?'#d97706':'#64748b', lab=dentro?'Trabajando':pausa?'En pausa':'Fuera de turno';
+  const ent=(F.hoy||[]).filter(x=>x.tipo==='entrada').pop();
+  const acc=(dentro||pausa)
+    ? `<div class="row" style="margin-top:14px">${pausa?`<button class="btn b-ok big fbtn" onclick="fichar('pausa_fin')">▶ Volver de la pausa</button>`:`<button class="btn b-warn big fbtn" onclick="fichar('pausa_ini')">☕ Pausa</button>`}<button class="btn b-bad big fbtn" onclick="confSalida()">⏹ Salida</button></div>`
+    : `<button class="btn b-ok big fbtn" style="margin-top:14px;min-height:64px;font-size:18px" onclick="fichar('entrada')">▶ Marcar ENTRADA</button>`;
+  const T=hzHoy();
+  const dias=(F.dias||[]);
+  const hoyEv=(F.hoy||[]).map(x=>`<div class="rec"><span style="font-size:18px">${{entrada:'🟢',pausa_ini:'☕',pausa_fin:'▶️',salida:'🔴'}[x.tipo]}</span><div style="flex:1"><b>${{entrada:'Entrada',pausa_ini:'Inicio de pausa',pausa_fin:'Fin de pausa',salida:'Salida'}[x.tipo]}</b></div><span class="h">${fHora(x.ts)}</span></div>`).join('');
+  const nTar=S.tar?S.tar.length:null;
+  return tabs+`<div class="card" style="text-align:center;padding:18px 14px">
+    <div class="muted" style="font-size:13px;text-transform:capitalize" id="f-fecha">${new Date(ahora()).toLocaleDateString('es-CO',{timeZone:'America/Bogota',weekday:'long',day:'numeric',month:'long'})}</div>
+    <div id="f-clk" style="font-size:44px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-1px;line-height:1.1;margin:2px 0">${fClk()}</div>
+    <div style="display:inline-flex;align-items:center;gap:7px;background:${col}1a;color:${col};border-radius:99px;padding:5px 14px;font-weight:800;font-size:14px"><i style="width:9px;height:9px;border-radius:50%;background:${col};display:inline-block${dentro?';box-shadow:0 0 0 4px '+col+'33':''}"></i>${lab}</div>
+    ${(dentro||pausa)?`<div style="margin-top:10px;font-size:13px" class="muted">Entrada ${ent?fHora(ent.ts):'—'} · Trabajado hoy <b id="f-trab" style="color:var(--text)">${fMin(ficTrab())}</b></div>`:''}
+    ${olv?`<div style="margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;font-size:13px;text-align:left">⚠️ La última entrada (${fDia(F.ultimo.ts)} ${fHora(F.ultimo.ts)}) quedó sin salida. Marca tu entrada de hoy y avisa en <b>Permisos → Olvidé marcar</b> para que Planeación lo corrija.</div>`:''}
+    ${acc}</div>
+  ${T?`<div class="card" style="display:flex;gap:10px;align-items:center"><div style="font-size:24px">📅</div><div style="flex:1"><b>Hoy: turno ${esc(T.k)} · ${esc(T.n.toLowerCase())}</b><div class="muted" style="font-size:13px">${esc(T.h)}</div></div><button class="btn b-gh" style="width:auto;padding:0 12px;min-height:38px" onclick="S.view='hor';pintar()">Ver</button></div>`:''}
+  <div class="card" style="display:flex;gap:10px;align-items:center"><div style="font-size:24px">📋</div><div style="flex:1"><b>${nTar==null?'Mis tareas':nTar?nTar+' tarea'+(nTar>1?'s':'')+' asignada'+(nTar>1?'s':''):'Sin tareas asignadas'}</b><div class="muted" style="font-size:13px">Lo que Planeación te asignó</div></div><button class="btn b-gh" style="width:auto;padding:0 12px;min-height:38px" onclick="S.view='tar';pintar()">Ver</button></div>
+  ${hoyEv?`<h3>Mis marcaciones de hoy</h3><div class="card" style="padding:4px 14px">${hoyEv}</div>`:''}
+  ${dias.length?`<h3>Últimos días</h3><div class="card" style="padding:4px 14px">${dias.slice(0,14).map(d=>`<div class="rec"><span style="font-size:18px">${d.abierta?'🟢':d.fin?'✅':'⚠️'}</span><div style="flex:1;min-width:0"><b style="text-transform:capitalize">${fDia(d.ini)}</b><small>${fHora(d.ini)} → ${d.fin?fHora(d.fin):(d.abierta?'en curso':'sin salida')}${d.pausa_min?' · pausa '+fMin(d.pausa_min):''}</small></div><span class="h">${d.fin||d.abierta?fMin(d.trab_min):'—'}</span></div>`).join('')}</div>`:''}`;
+}
+function hzHoy(){ try{ const H=S.hor; if(!H||H.err) return null; const hoy=hzD(H.hoy), dow=hoy.getDay(); const w=(H.semanas||[]).find(x=>x.semana===H.lunes); if(!w) return null; const k=hzKey(w.turno), T=HZT[k]; if(!T) return null;
+  const h=dow===0?'Domingo: sin turno':T.lv===null?(k==='V'?'Vacaciones':''):dow===6?(T.sab?'Sábado '+T.sab:'Sábado: sin turno'):T.lv; return {k,n:T.n,h}; }catch(e){ return null; } }
+setInterval(()=>{ const c=$('f-clk'); if(c){ c.innerHTML=fClk(); const t=$('f-trab'); if(t) t.textContent=fMin(ficTrab()); } },1000);
+setInterval(()=>{ if(S.ses&&S.view==='fic'&&!document.hidden&&!S.busy) cargarFic(); },60000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S.ses&&S.view==='fic') cargarFic(); });
+
+/* Permisos */
+const PTIPOS=[['Permiso personal','🙋'],['Cita médica','🩺'],['Calamidad doméstica','🏠'],['Vacaciones','🏖️'],['Cambio de turno','🔁'],['Llegada tarde / salida temprana','⏰'],['Olvidé marcar','📝'],['Otro','✏️']];
+async function cargarPer(){
+  S.perCarg=true;
+  try{ S.per=await sb.rpc('planta_mis_permisos',{p_token:S.ses.token})||[]; S.perErr=null; }
+  catch(e){ S.perCarg=false; if(/venci|sesi/i.test(e.message)){ toast(e.message,true); salir(true); return; } S.per=[]; S.perErr=/planta_mis_permisos/i.test(e.message)?'Esta función todavía no está activada.':e.message; }
+  S.perCarg=false; if(S.view==='per') pintar(); }
+const ESTP={pendiente:['⏳ Pendiente','#d97706','#fffbeb'],aprobado:['✅ Aprobado','#16a34a','#f0fdf4'],rechazado:['❌ Rechazado','#dc2626','#fef2f2'],cancelado:['Cancelado','#64748b','#f1f5f9']};
+function rngF(p){ const a=String(p.desde).slice(0,10), b=String(p.hasta).slice(0,10); return a===b?dFmt(a):dFmt(a)+' → '+dFmt(b); }
+function vistaPer(){
+  const tabs=segHtml('per'); const L=S.per;
+  const nuevo=`<button class="btn b-pri big" style="margin-bottom:12px" onclick="abrirPer()">＋ Nueva solicitud</button>`;
+  if(!L&&!S.perErr) return tabs+nuevo+'<div class="empty">Cargando…</div>';
+  if(S.perErr) return tabs+`<div class="card"><b>⚠️ No se pudo cargar</b><p class="muted" style="margin:6px 0 12px">${esc(S.perErr)}</p><button class="btn b-pri" onclick="S.perErr=null;S.per=null;pintar()">Reintentar</button></div>`;
+  if(!L.length) return tabs+nuevo+'<div class="empty">Aún no has hecho solicitudes.<br><span class="muted" style="font-size:12px">Pide permisos, citas, vacaciones o cambios de turno desde aquí.</span></div>';
+  return tabs+nuevo+L.map(p=>{ const e=ESTP[p.estado]||ESTP.pendiente, ic=(PTIPOS.find(x=>x[0]===p.tipo)||['','📄'])[1];
+    return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><b>${ic} ${esc(p.tipo)}</b><div class="muted" style="font-size:13px">${rngF(p)}${p.hora_ini?' · '+esc(p.hora_ini)+(p.hora_fin?' – '+esc(p.hora_fin):''):''}</div></div><span style="background:${e[2]};color:${e[1]};border-radius:99px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap">${e[0]}</span></div>
+     ${p.motivo?`<div style="margin-top:6px;font-size:13.5px">${esc(p.motivo)}</div>`:''}
+     ${p.respuesta?`<div style="margin-top:8px;background:#eff6ff;border-radius:10px;padding:8px 10px;font-size:13px">💬 ${esc(p.respuesta)}</div>`:''}
+     ${p.estado==='pendiente'?`<button class="btn b-gh" style="margin-top:8px;min-height:38px" onclick="cancelarPer(${p.id})">Cancelar solicitud</button>`:''}</div>`; }).join('');
+}
+let PF={};
+function abrirPer(){ PF={tipo:'',desde:hoyISO(0),hasta:hoyISO(0),hi:'',hf:'',mot:''}; verPer(); }
+function verPer(){
+  sheet(`<h2><span>＋ Nueva solicitud</span><button class="x" onclick="cerrarSheet()">✕</button></h2>
+   <label class="l">¿Qué necesitas?</label>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">${PTIPOS.filter(t=>t[0]!=='Olvidé marcar'||(S.cfg&&S.cfg.fichaje)).map(t=>`<button class="btn ${PF.tipo===t[0]?'b-pri':'b-gh'}" style="min-height:48px;font-size:13px;padding:6px" onclick="PF.tipo='${t[0]}';verPer()">${t[1]} ${t[0]}</button>`).join('')}</div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label class="l">Desde</label><input type="date" value="${PF.desde}" onchange="PF.desde=this.value;if(PF.hasta<PF.desde){PF.hasta=PF.desde;verPer();}"></div><div><label class="l">Hasta</label><input type="date" value="${PF.hasta}" min="${PF.desde}" onchange="PF.hasta=this.value;verPer()"></div></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label class="l">Hora inicio (opcional)</label><input type="time" value="${PF.hi}" onchange="PF.hi=this.value"></div><div><label class="l">Hora fin (opcional)</label><input type="time" value="${PF.hf}" onchange="PF.hf=this.value"></div></div>
+   ${PF.tipo==='Vacaciones'?`<div style="background:#ecfeff;border-radius:10px;padding:8px 10px;font-size:13px;margin:8px 0">🏖️ Pides <b>${Math.round((new Date(PF.hasta)-new Date(PF.desde))/864e5)+1} día(s) calendario</b>. Planeación revisa el cruce con el horario y te responde aquí.</div>`:''}
+   <label class="l">Motivo / detalle</label><textarea id="pf-mot" rows="3" style="width:100%;border:1.5px solid var(--border);border-radius:12px;padding:10px;font:inherit" placeholder="Cuéntale a Planeación el motivo…" oninput="PF.mot=this.value">${esc(PF.mot)}</textarea>
+   <button class="btn b-ok big" id="pf-go" style="margin-top:12px" onclick="enviarPer()">Enviar solicitud</button>`); }
+async function enviarPer(){
+  if(!PF.tipo){ toast('Elige qué necesitas',true); return; } if(!PF.desde){ toast('Elige la fecha',true); return; }
+  if(PF.tipo==='Otro'&&!limpio(PF.mot)){ toast('Cuéntanos el motivo',true); return; }
+  const b=$('pf-go'); if(b){ b.disabled=true; b.textContent='Enviando…'; }
+  try{ await sb.rpc('planta_permiso_crear',{p_token:S.ses.token,p_tipo:PF.tipo,p_desde:PF.desde,p_hasta:PF.hasta||PF.desde,p_hora_ini:PF.hi||null,p_hora_fin:PF.hf||null,p_motivo:limpio(PF.mot)||null});
+    cerrarSheet(); toast('✅ Solicitud enviada a Planeación'); await cargarPer(); }
+  catch(e){ if(b){ b.disabled=false; b.textContent='Enviar solicitud'; } toast(e.message,true); } }
+async function cancelarPer(id){ if(!confirm('¿Cancelar esta solicitud?')) return; try{ await sb.rpc('planta_permiso_cancelar',{p_token:S.ses.token,p_id:id}); toast('Solicitud cancelada'); await cargarPer(); }catch(e){ toast(e.message,true); } }
+
+
+/* Perfil: foto y cambio de código */
+async function cargarPerfil(){ try{ S.perfil=await sb.rpc('planta_perfil',{p_token:S.ses.token}); headSes(); }catch(e){ if(/venci|sesi/i.test(e.message)) salir(true); } }
+function abrirPerfil(){ const P=S.perfil||{};
+  sheet(`<h2><span>Mi perfil</span><button class="x" onclick="cerrarSheet()">✕</button></h2>
+   <div style="text-align:center;margin:6px 0 14px"><div style="display:flex;justify-content:center">${avHtml(S.ses.nombre,P.foto,96)}</div><div style="font-size:18px;font-weight:800;margin-top:8px">${esc(limpio(S.ses.nombre))}</div><div class="muted">${esc(S.ses.cargo||P.cargo||'')}${P.usuario?' · usuario '+esc(P.usuario):''}</div></div>
+   <input type="file" id="pf-file" accept="image/*" style="display:none" onchange="subirFoto(this)">
+   <div class="row"><button class="btn b-pri" onclick="$('pf-file').click()">📷 ${P.foto?'Cambiar foto':'Poner mi foto'}</button>${P.foto?'<button class="btn b-gh" onclick="quitarFoto()">Quitar</button>':''}</div>
+   <button class="btn b-gh" style="margin-top:10px" onclick="formPin()">🔑 Cambiar mi código</button>`); }
+function redim(img,z,q){ const c=document.createElement('canvas'); c.width=c.height=z; const x=c.getContext('2d'), m=Math.min(img.width,img.height); x.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,z,z); return c.toDataURL('image/jpeg',q); }
+function subirFoto(inp){ const f=inp.files&&inp.files[0]; if(!f) return; const r=new FileReader();
+  r.onload=()=>{ const im=new Image(); im.onload=async()=>{ try{ const foto=redim(im,256,.82), mini=redim(im,72,.7);
+      await sb.rpc('planta_foto_set',{p_token:S.ses.token,p_foto:foto,p_mini:mini}); S.perfil=S.perfil||{}; S.perfil.foto=foto; headSes(); toast('✅ Foto guardada'); abrirPerfil(); }catch(e){ toast(e.message,true); } };
+    im.onerror=()=>toast('No se pudo leer la imagen',true); im.src=r.result; };
+  r.readAsDataURL(f); }
+async function quitarFoto(){ try{ await sb.rpc('planta_foto_set',{p_token:S.ses.token,p_foto:null,p_mini:null}); S.perfil.foto=null; headSes(); toast('Foto quitada'); abrirPerfil(); }catch(e){ toast(e.message,true); } }
+function formPin(){ sheet(`<h2><span>🔑 Cambiar mi código</span><button class="x" onclick="abrirPerfil()">✕</button></h2>
+  <label class="l">Código actual</label><input type="tel" id="pn-a" inputmode="numeric" maxlength="8" autocomplete="off">
+  <label class="l">Código nuevo (4 a 8 números)</label><input type="tel" id="pn-n" inputmode="numeric" maxlength="8" autocomplete="off">
+  <label class="l">Repite el código nuevo</label><input type="tel" id="pn-r" inputmode="numeric" maxlength="8" autocomplete="off">
+  <button class="btn b-ok big" style="margin-top:12px" onclick="guardarPin()">Guardar código</button>`); }
+async function guardarPin(){ const a=$('pn-a').value.trim(), n=$('pn-n').value.trim(), r=$('pn-r').value.trim();
+  if(!/^\d{4,8}$/.test(n)){ toast('El código nuevo debe tener de 4 a 8 números',true); return; } if(n!==r){ toast('Los códigos nuevos no coinciden',true); return; }
+  try{ await sb.rpc('planta_cambiar_pin',{p_token:S.ses.token,p_actual:a,p_nuevo:n}); cerrarSheet(); toast('✅ Código cambiado'); }catch(e){ toast(e.message,true); } }
 
 // ── ARRANQUE ──
 iniciar();
