@@ -318,20 +318,33 @@ function pedirId(id,a){ const t=S.all.find(x=>x.id===id); if(!t) return; if(S.se
    <button class="btn b-ok big" style="margin-top:12px" onclick="confirmarId('${id}','${a}')">Sí, soy ${esc(n.split(' ')[0])}</button>
    <button class="btn b-gh" style="width:100%;margin-top:10px" onclick="cerrarSheet()">No, cancelar</button>`); }
 function confirmarId(id,a){ const t=S.all.find(x=>x.id===id); if(!t) return; if(a==='terminar') abrirTerminar(id); else { cerrarSheet(); accion(a,id); } }
-function abrirTerminar(id){
-  const t=S.all.find(x=>x.id===id); if(!t) return; const trab=t.tipo_registro==='Trabajo normal #OP'||t.tipo_registro==='Reproceso'; const s=segs(t);
+function matchTarea(t,lista){ if(!t||!t.op||!(t.tipo_registro==='Trabajo normal #OP'||t.tipo_registro==='Reproceso')) return -1; const c=(lista||[]).map((x,i)=>({x,i})).filter(o=>String(o.x.op)===String(t.op)&&String(o.x.item_num)===String(t.item_num)); if(!c.length) return -1; const mq=String(t.maquina||'').toLowerCase().trim(); return (c.find(o=>String(o.x.maquina||'').toLowerCase().trim()===mq)||c[0]).i; }
+function avBloque(t){ const un=Math.max(1,Number(t.unidades)||1), hechos=Number(t.items_hechos)||0, pct=Math.round(Number(t.avance_paso)||0);
+  if(un>1) return `<div class="card" style="margin-top:12px;border:2px solid var(--pri,#2563eb)"><b>📊 ¿Cuántas terminaste en este tiempo?</b><div class="muted" style="font-size:12.5px">OP-${esc(t.op)} · Ítem ${esc(t.item_num)} · ${un} unidades · llevas ${hechos}</div><input type="number" inputmode="numeric" id="av-n" min="0" max="${un-hechos}" placeholder="0" style="font-size:24px;text-align:center;margin-top:6px"><button type="button" class="btn b-gh" style="margin-top:6px" onclick="$('av-n').value=${un-hechos}">Todas las que faltan (${un-hechos})</button></div>`;
+  return `<div class="card" style="margin-top:12px;border:2px solid var(--pri,#2563eb)"><b>📊 ¿Terminaste este ítem?</b><div class="muted" style="font-size:12.5px">OP-${esc(t.op)} · Ítem ${esc(t.item_num)}</div><div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn b-ok" id="av-si" onclick="avSel(1)">✅ Sí, 100%</button><button type="button" class="btn b-gh" id="av-no" onclick="avSel(0)">⏳ No</button></div><div id="av-rg" style="display:none;margin-top:10px"><div class="muted">¿A qué porcentaje de avance va?</div><div style="text-align:center;font-size:30px;font-weight:900" id="av-v">${pct}%</div><input type="range" id="av-p" min="0" max="100" step="5" value="${pct}" style="width:100%" oninput="$('av-v').textContent=this.value+'%'"></div><input type="hidden" id="av-t" value="1"></div>`; }
+function avSel(si){ $('av-t').value=si?'1':'0'; $('av-rg').style.display=si?'none':''; $('av-si').className='btn '+(si?'b-ok':'b-gh'); $('av-no').className='btn '+(si?'b-gh':'b-bad'); }
+async function abrirTerminar(id){
+  if(!S.tar&&S.ses&&!S._tarTmp){ try{ S._tarTmp=await sb.rpc('planta_mis_tareas',{p_token:S.ses.token})||[]; }catch(e){ S._tarTmp=[]; } }
+  abrirTerminar2(id); }
+function abrirTerminar2(id){
+  const t=S.all.find(x=>x.id===id); if(!t) return; const ti=matchTarea(t,S.tar||S._tarTmp), tarea=ti>=0?(S.tar||S._tarTmp)[ti]:null; const trab=t.tipo_registro==='Trabajo normal #OP'||t.tipo_registro==='Reproceso'; const s=segs(t);
   sheet(`<h2><span>⏹ Terminar</span><button class="x" onclick="cerrarSheet()">✕</button></h2>
    <div class="card" style="margin:10px 0;text-align:center;background:#f8fafc"><div class="muted">${esc(t.maquina)} · ${esc(detTimer(t))}</div><div class="clock" style="font-size:34px">${hms(s)}</div><div class="muted">${dur(s)} de trabajo${t.estado==='pausado'?' (en pausa)':''}</div></div>
    ${t.verifico==='No'||t.indicaciones==='No'?'<div class="warnbox">⚠️ Marcado al iniciar: '+esc(t.obs_inicio||'')+'</div>':''}
    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;font-size:13px">¿Se te olvidó terminar? Corrige el tiempo</summary><label class="l">Tiempo real trabajado (minutos)</label><input type="number" inputmode="numeric" id="t-min" min="1" max="960" placeholder="${Math.max(1,Math.round(s/60))}"></details>
+   ${tarea?avBloque(tarea):''}
    <button class="btn b-ok big" id="t-go" style="margin-top:16px" onclick="terminar('${id}')">✅ Guardar registro</button>
    <button class="btn b-bad" style="width:100%;margin-top:10px" onclick="descartar('${id}')">Descartar (fue un error)</button>`);
 }
 async function terminar(id){
   if(S.busy) return; const mi=$('t-min')&&$('t-min').value?Number($('t-min').value):null;
   S.busy=true; const b=$('t-go'); b.disabled=true; b.textContent='Guardando…';
-  const t0=S.all.find(x=>x.id===id);
-  try{ const r=await sb.rpc('tiempos_terminar',{p_id:id,p_minutos:mi,p_actor:(S.all.find(x=>x.id===id)||{}).colaborador}); cerrarSheet(); toast('✅ Guardado: '+Number(r.horas).toFixed(2)+' h'); await refrescar(); preguntarAvance(t0,Number(r.horas)); }
+  const t0=S.all.find(x=>x.id===id); const ti=matchTarea(t0,S.tar||S._tarTmp), tarea=ti>=0?(S.tar||S._tarTmp)[ti]:null; let av=null;
+  if(tarea){ const un=Math.max(1,Number(tarea.unidades)||1);
+    if(un>1){ const v=($('av-n')||{}).value; if(v===''||!(Number(v)>=0)){ toast('Escribe cuántas terminaste (puede ser 0)',true); S.busy=false; b.disabled=false; b.textContent='✅ Guardar registro'; return; } av={p_terminados:Number(v),p_pct:null}; }
+    else { const si=($('av-t')||{}).value!=='0'; av=si?{p_terminados:1,p_pct:null}:{p_terminados:null,p_pct:Number(($('av-p')||{}).value||0)}; } }
+  try{ const r=await sb.rpc('tiempos_terminar',{p_id:id,p_minutos:mi,p_actor:(S.all.find(x=>x.id===id)||{}).colaborador}); cerrarSheet(); toast('✅ Guardado: '+Number(r.horas).toFixed(2)+' h'); await refrescar();
+    if(av&&tarea){ try{ const q=await sb.rpc('planta_avance_marcar',Object.assign({p_token:S.ses.token,p_id:tarea.id,p_paso:Number(tarea.paso),p_horas:Number(r.horas)||null,p_nota:null},av)); toast('📊 Avance del paso: '+Math.round(q.avance_paso)+'%'); }catch(e2){ toast('Tiempo guardado, pero el avance falló: '+e2.message,true); } S.tar=null; S._tarTmp=null; } else S._tarTmp=null; }
   catch(e){ toast(e.message,true); b.disabled=false; b.textContent='✅ Guardar registro'; if(/ya no existe/.test(e.message)){ cerrarSheet(); refrescar(); } }
   S.busy=false;
 }
