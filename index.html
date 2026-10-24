@@ -198,8 +198,8 @@ function vistaInicio(){
   ${hh.length?`<h3>Registrado hoy · ${tot.toFixed(2)} h</h3><div class="card" style="padding:4px 14px">${hh.map(recFila).join('')}</div>`:''}`;
 }
 const dFmt=f=>{ const p=String(f||'').split('-'); return p.length===3?p[2]+'/'+p[1]:'—'; };
-function recFila(r){ const d=r.tipo_registro==='Parada de máquina'?(r.tipo_parada||'Parada'):r.tipo_registro==='Mantenimiento'?'Mantenimiento':'OP '+r.op+' · ítem '+r.item_num;
-  return `<div class="rec"><span style="font-size:18px">${ICON[r.tipo_registro]||'•'}</span><div style="flex:1;min-width:0"><b>${esc(d)}</b><small>${r.colaborador?esc(limpio(r.colaborador))+' · ':''}${esc(r.maquina||'')}${r.hora_inicio?' · '+esc(r.hora_inicio)+(r.hora_fin?' → '+esc(r.hora_fin):''):''}</small></div><span class="h">${r.duracion_horas!=null?Number(r.duracion_horas).toFixed(2)+' h':'—'}</span></div>`; }
+function recFila(r,mine){ const ti=mine?matchTarea(r,S.tar):-1; const bt=ti>=0?`<button type="button" class="btn b-pri" style="width:auto;min-height:36px;padding:0 12px;font-size:12.5px;margin-left:8px" onclick="abrirAvance(${ti},${Number(r.duracion_horas)||0})">📊 Marcar avance</button>`:''; const d=r.tipo_registro==='Parada de máquina'?(r.tipo_parada||'Parada'):r.tipo_registro==='Mantenimiento'?'Mantenimiento':'OP '+r.op+' · ítem '+r.item_num;
+  return `<div class="rec"><span style="font-size:18px">${ICON[r.tipo_registro]||'•'}</span><div style="flex:1;min-width:0"><b>${esc(d)}</b><small>${r.colaborador?esc(limpio(r.colaborador))+' · ':''}${esc(r.maquina||'')}${r.hora_inicio?' · '+esc(r.hora_inicio)+(r.hora_fin?' → '+esc(r.hora_fin):''):''}</small></div><span class="h">${r.duracion_horas!=null?Number(r.duracion_horas).toFixed(2)+' h':'—'}</span>${bt}</div>`; }
 // ── ASISTENTE (iniciar / ya terminé) ──
 function sheet(h){ $('sheet').innerHTML=h; $('ov').classList.add('open'); }
 function cerrarSheet(){ $('ov').classList.remove('open'); }
@@ -406,7 +406,7 @@ async function cargarTareas(){
   S.tarCarg=true;
   try{ S.tar=await sb.rpc('planta_mis_tareas',{p_token:S.ses.token})||[]; S.tarErr=null; }
   catch(e){ S.tarCarg=false; if(/venci|sesi/i.test(e.message)){ toast(e.message,true); salir(true); return; } S.tar=[]; S.tarErr=/planta_mis_tareas/i.test(e.message)?'Esta función todavía no está activada.':e.message; }
-  S.tarCarg=false; if(S.view==='tar') pintar(); }
+  S.tarCarg=false; if(S.view==='tar'||S.view==='reg') pintar(); }
 function diasPact(f){ if(!f) return null; const a=new Date(String(f).slice(0,10)+'T00:00:00'), h=new Date(); h.setHours(0,0,0,0); return Math.round((a-h)/86400000); }
 function vistaTareas(){
   const tabs=segHtml('tar');
@@ -458,13 +458,14 @@ async function guardarAvance(pct){
 function iniciarTarea(op,item){ abrirForm('iniciar'); W.tipo=TIPOS[0][0]; W.op=String(op); W.item=Number(item); vista();
   setTimeout(()=>{ if($('w-op')){ buscarOp(String(op)); const it=Number(item); const t=setInterval(()=>{ if(W.buscado){ clearInterval(t); elegirItem(it); } },200); setTimeout(()=>clearInterval(t),5000); } },80); }
 function vistaInicioMi(){
+  if(!S.tar&&!S.tarCarg&&S.ses) cargarTareas();
   const me=S.ses.colaborador, mios=S.all.filter(t=>t.colaborador===me), otros=S.all.filter(t=>t.colaborador!==me), hh=(S.hist||[]).filter(r=>r.colaborador===me), tot=hh.reduce((a,r)=>a+(Number(r.duracion_horas)||0),0);
   return `${segHtml('reg')}
   <button class="btn b-ok big" onclick="abrirForm('iniciar')">▶ Iniciar trabajo</button>
   <button class="btn b-gh big" style="margin-top:10px;min-height:54px;font-size:15px" onclick="abrirForm('manual')">🕘 Ya terminé, registrar</button>
   <h3>Mis cronómetros${mios.length?' · '+mios.length:''}</h3>
   ${mios.length?mios.map(t=>tarjetaTimer(t,true)).join(''):'<div class="empty">No tienes cronómetros corriendo. Toca “Iniciar trabajo” para empezar.</div>'}
-  ${hh.length?`<h3>Mi registro de hoy · ${tot.toFixed(2)} h</h3><div class="card" style="padding:4px 14px">${hh.map(recFila).join('')}</div>`:''}
+  ${hh.length?`<h3>Mi registro de hoy · ${tot.toFixed(2)} h</h3><div class="card" style="padding:4px 14px">${hh.map(r=>recFila(r,true)).join('')}</div>`:''}
   ${otros.length?`<h3>Otros en planta ahora · ${otros.length}</h3>${otros.map(t=>tarjetaTimer(t,false)).join('')}`:''}`;
 }
 const HZT={'C0':{n:'Normal',lv:'8:30 am – 5:00 pm',sab:'8:00 am – 12:30 pm',d:['Almuerzo 12:00 – 1:00 pm','Descanso 3:00 – 3:15 pm'],c:'#0d9488'},
